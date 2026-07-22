@@ -28,7 +28,7 @@ import numpy as np
 from axolotl.agent import Agent, sample_population
 from axolotl.archetypes import ARCHETYPES, Archetype, ChargingStrategy
 from axolotl.config import SimulationConfig
-from axolotl.prices import default_price_profile
+from axolotl.prices import synthetic_price_profile
 
 # Shape of the gamma distribution for day-to-day mileage variation. Shape 4
 # gives a right-skewed distribution with a coefficient of variation of 0.5:
@@ -96,7 +96,7 @@ def run_simulation(
 ) -> SimulationResult:
     """Simulate a population of EV drivers and record plug-in state and SoC."""
     steps_per_day = config.steps_per_day
-    prices = price_profile if price_profile is not None else default_price_profile(steps_per_day)
+    prices = price_profile if price_profile is not None else synthetic_price_profile(steps_per_day)
     if len(prices) != steps_per_day:
         raise ValueError(f"price_profile must have {steps_per_day} entries, got {len(prices)}")
 
