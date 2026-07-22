@@ -65,6 +65,10 @@ class Archetype(BaseModel):
     # Std dev of per-agent plug-in/out times. ~1h spread around the evening
     # peak per CNZ report Fig. 4; 0 disables time variation.
     plug_time_sigma_hours: float = Field(default=1.0, ge=0)
+    # Weekend timing shifts relative to the agent's weekday habit: plug in
+    # ~1h earlier, plug out ~2h later (CNZ report Figs. 4-5).
+    weekend_plug_in_shift_hours: float = Field(default=-1.0, ge=-12, le=12)
+    weekend_plug_out_shift_hours: float = Field(default=2.0, ge=-12, le=12)
     # Lognormal sigma of per-agent mean daily mileage around the archetype mean.
     miles_sigma: float = Field(default=0.25, ge=0)
     # Weekend daily miles relative to the archetype's average day. Weekday
@@ -182,6 +186,8 @@ ARCHETYPES: tuple[Archetype, ...] = (
         plug_out_hour=23.983,
         target_soc=0.80,
         plug_time_sigma_hours=0.0,
+        weekend_plug_in_shift_hours=0.0,
+        weekend_plug_out_shift_hours=0.0,
     ),
 )
 

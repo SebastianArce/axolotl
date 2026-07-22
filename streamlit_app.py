@@ -127,7 +127,9 @@ with st.expander("How the simulation works"):
 
         Each simulated day the car leaves at its plug-out time, drives a
         gamma-distributed number of miles (weekday/weekend adjusted), and
-        returns at its plug-in time. While plugged in, most archetypes charge
+        returns at its plug-in time. At weekends drivers arrive home about an
+        hour earlier and leave about two hours later, with more spread — as
+        observed in the study. While plugged in, most archetypes charge
         immediately at full power until their target state of charge; the
         *Intelligent Octopus* archetype instead schedules charging into the
         cheapest half-hours that still reach the target by its ready-by time.

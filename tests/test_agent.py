@@ -20,6 +20,24 @@ def test_zero_spread_reproduces_archetype_means() -> None:
     assert agent.plug_out_hour == pytest.approx(AVERAGE_UK.plug_out_hour)
     assert agent.mean_daily_miles == pytest.approx(AVERAGE_UK.mean_daily_miles)
     assert agent.target_soc == AVERAGE_UK.target_soc
+    assert agent.weekend_plug_in_hour == pytest.approx(
+        AVERAGE_UK.plug_in_hour + AVERAGE_UK.weekend_plug_in_shift_hours
+    )
+    assert agent.weekend_plug_out_hour == pytest.approx(
+        AVERAGE_UK.plug_out_hour + AVERAGE_UK.weekend_plug_out_shift_hours
+    )
+
+
+def test_weekend_times_shift_and_spread_wider() -> None:
+    rng = np.random.default_rng(6)
+    agents = [sample_agent(AVERAGE_UK, rng) for _ in range(3_000)]
+    weekend_in = [a.weekend_plug_in_hour for a in agents]
+    weekend_out = [a.weekend_plug_out_hour for a in agents]
+    # CNZ report Figs. 4-5: weekend plug-ins ~1h earlier, plug-outs ~2h later.
+    assert np.mean(weekend_in) == pytest.approx(17.0, abs=0.1)
+    assert np.mean(weekend_out) == pytest.approx(9.0, abs=0.1)
+    # ...and more spread out than the weekday habit.
+    assert np.std(weekend_in) > np.std([a.plug_in_hour for a in agents])
 
 
 def test_target_soc_sampled_from_preference_mix() -> None:

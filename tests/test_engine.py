@@ -99,11 +99,27 @@ def test_smart_charging_meets_target_by_departure() -> None:
     # complete by the earlier of the ready-by time and their own departure.
     at_target = []
     for i, agent in enumerate(result.agents):
-        plug_out_step = round(agent.plug_out_hour / step_hours) % spd
         for day in range(config.burn_in_days, config.n_days):
+            is_weekend = day % 7 in (5, 6)
+            hour = agent.weekend_plug_out_hour if is_weekend else agent.plug_out_hour
+            plug_out_step = round(hour / step_hours) % spd
             soc_before_leaving = result.soc[i, day * spd + plug_out_step - 1]
             at_target.append(soc_before_leaving >= agent.target_soc - 0.01)
     assert np.mean(at_target) > 0.95
+
+
+def test_weekend_timing_shifts_show_in_plugged_share() -> None:
+    config, result = single_archetype_run(AVERAGE_UK)
+    spd = config.steps_per_day
+    plugged = result.plugged.reshape(config.n_agents, config.n_days, spd)
+    weekdays = [d for d in range(config.burn_in_days, config.n_days) if d % 7 not in (5, 6)]
+    weekends = [d for d in range(config.burn_in_days, config.n_days) if d % 7 in (5, 6)]
+    at_1730 = int(17.5 / 24 * spd)
+    at_0830 = int(8.5 / 24 * spd)
+    # Weekend arrivals are ~1h earlier and departures ~2h later, so more of
+    # the fleet is plugged in at 17:30 and still plugged in at 08:30.
+    assert plugged[:, weekends, at_1730].mean() > plugged[:, weekdays, at_1730].mean() + 0.2
+    assert plugged[:, weekends, at_0830].mean() > plugged[:, weekdays, at_0830].mean() + 0.2
 
 
 def test_always_plugged_in_stays_plugged() -> None:
