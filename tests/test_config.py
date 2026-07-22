@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from axolotl.config import SimulationConfig
 
@@ -23,5 +24,5 @@ def test_default_config_is_valid() -> None:
 )
 def test_invalid_config_rejected(field: str, value: Any) -> None:
     kwargs: dict[str, Any] = {field: value}
-    with pytest.raises(ValueError, match=field):
+    with pytest.raises(ValidationError, match=field):
         SimulationConfig(**kwargs)

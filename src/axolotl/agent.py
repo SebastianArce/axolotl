@@ -5,16 +5,16 @@ An agent is an immutable set of behavioural parameters. Day-to-day randomness
 this module only captures *who the driver is*, not what they do on a given day.
 """
 
-from dataclasses import dataclass
-
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 
 from axolotl.archetypes import Archetype
 
 
-@dataclass(frozen=True)
-class Agent:
+class Agent(BaseModel):
     """One driver, sampled from an archetype with individual variation."""
+
+    model_config = ConfigDict(frozen=True)
 
     archetype: Archetype
     # This agent's habitual plug-in/out times, fractional local hours.

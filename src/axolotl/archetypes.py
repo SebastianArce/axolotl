@@ -5,12 +5,15 @@ derived from Centre for Net Zero's "Learning from Intelligent Octopus" report
 (May 2022). Times are local hours; SoC values are fractions of battery capacity.
 """
 
-from dataclasses import dataclass
 from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
 
 DAYS_PER_YEAR = 365
 WEEKDAYS_PER_WEEK = 5
 WEEKEND_DAYS_PER_WEEK = 2
+# Above this, weekday miles would have to be negative to preserve annual mileage.
+MAX_WEEKEND_MILES_MULTIPLIER = 7 / WEEKEND_DAYS_PER_WEEK
 
 
 class ChargingStrategy(StrEnum):
@@ -23,53 +26,38 @@ class ChargingStrategy(StrEnum):
     SMART = "smart"
 
 
-@dataclass(frozen=True)
-class Archetype:
+class Archetype(BaseModel):
     """Parameters describing one behavioural pattern of EV drivers.
 
     Per-agent variation is applied on top of these means when sampling a
     population (see `agent.sample_population`).
     """
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
-    population_share: float
-    annual_miles: float
-    battery_kwh: float
-    efficiency_mi_per_kwh: float
+    population_share: float = Field(ge=0, le=1)
+    annual_miles: float = Field(gt=0)
+    battery_kwh: float = Field(gt=0)
+    efficiency_mi_per_kwh: float = Field(gt=0)
     # Probability of plugging in on any given day (1.0 = daily, 0.2 = every ~5 days).
-    plug_in_frequency_per_day: float
-    charger_kw: float
+    plug_in_frequency_per_day: float = Field(gt=0, le=1)
+    charger_kw: float = Field(gt=0)
     # Mean plug-in/plug-out times, fractional local hours (18.5 = 18:30).
-    plug_in_hour: float
-    plug_out_hour: float
-    target_soc: float
+    plug_in_hour: float = Field(ge=0, lt=24)
+    plug_out_hour: float = Field(ge=0, lt=24)
+    target_soc: float = Field(gt=0, le=1)
     strategy: ChargingStrategy = ChargingStrategy.IMMEDIATE
     # SMART only: deadline by which target SoC should be reached.
-    ready_by_hour: float = 7.0
+    ready_by_hour: float = Field(default=7.0, ge=0, lt=24)
     # Std dev of per-agent plug-in/out times. ~1h spread around the evening
     # peak per CNZ report Fig. 4; 0 disables time variation.
-    plug_time_sigma_hours: float = 1.0
+    plug_time_sigma_hours: float = Field(default=1.0, ge=0)
     # Lognormal sigma of per-agent mean daily mileage around the archetype mean.
-    miles_sigma: float = 0.25
+    miles_sigma: float = Field(default=0.25, ge=0)
     # Weekend daily miles relative to the archetype's average day. Weekday
     # miles are scaled so annual mileage is preserved (see multiplier methods).
-    weekend_miles_multiplier: float = 1.0
-
-    def __post_init__(self) -> None:
-        if not 0 <= self.population_share <= 1:
-            raise ValueError(f"population_share must be in [0, 1], got {self.population_share}")
-        if not 0 < self.target_soc <= 1:
-            raise ValueError(f"target_soc must be in (0, 1], got {self.target_soc}")
-        if not 0 < self.plug_in_frequency_per_day <= 1:
-            raise ValueError(
-                f"plug_in_frequency_per_day must be in (0, 1], got {self.plug_in_frequency_per_day}"
-            )
-        max_multiplier = 7 / WEEKEND_DAYS_PER_WEEK
-        if not 0 <= self.weekend_miles_multiplier <= max_multiplier:
-            raise ValueError(
-                f"weekend_miles_multiplier must be in [0, {max_multiplier}], "
-                f"got {self.weekend_miles_multiplier}"
-            )
+    weekend_miles_multiplier: float = Field(default=1.0, ge=0, le=MAX_WEEKEND_MILES_MULTIPLIER)
 
     # -- Derived quantities (the spreadsheet's computed columns) ---------------
 

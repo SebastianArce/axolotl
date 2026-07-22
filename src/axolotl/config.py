@@ -1,12 +1,11 @@
 """Simulation configuration."""
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MINUTES_PER_DAY = 24 * 60
 
 
-@dataclass(frozen=True)
-class SimulationConfig:
+class SimulationConfig(BaseModel):
     """Parameters of one simulation run.
 
     Defaults simulate 1,000 agents over 4 weeks at half-hour resolution —
@@ -15,28 +14,28 @@ class SimulationConfig:
     initial state of charge does not bias results.
     """
 
-    n_agents: int = 1_000
-    n_days: int = 28
-    timestep_minutes: int = 30
-    burn_in_days: int = 2
+    model_config = ConfigDict(frozen=True)
+
+    n_agents: int = Field(default=1_000, gt=0)
+    n_days: int = Field(default=28, gt=0)
+    timestep_minutes: int = Field(default=30, gt=0)
+    burn_in_days: int = Field(default=2, ge=0)
     seed: int = 42
     # Scales per-agent variation around archetype means (0 = deterministic).
-    spread: float = 1.0
+    spread: float = Field(default=1.0, ge=0)
 
-    def __post_init__(self) -> None:
-        if self.n_agents <= 0:
-            raise ValueError(f"n_agents must be positive, got {self.n_agents}")
-        if self.timestep_minutes <= 0 or MINUTES_PER_DAY % self.timestep_minutes:
+    @model_validator(mode="after")
+    def _validate_cross_field(self) -> "SimulationConfig":
+        if MINUTES_PER_DAY % self.timestep_minutes:
             raise ValueError(
                 f"timestep_minutes must divide a day evenly, got {self.timestep_minutes}"
             )
-        if not 0 <= self.burn_in_days < self.n_days:
+        if self.burn_in_days >= self.n_days:
             raise ValueError(
-                f"burn_in_days must be in [0, n_days), got {self.burn_in_days} "
+                f"burn_in_days must be less than n_days, got {self.burn_in_days} "
                 f"with n_days={self.n_days}"
             )
-        if self.spread < 0:
-            raise ValueError(f"spread must be non-negative, got {self.spread}")
+        return self
 
     @property
     def steps_per_day(self) -> int:
