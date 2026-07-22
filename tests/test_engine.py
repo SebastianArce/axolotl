@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from axolotl.archetypes import ARCHETYPES, WEEKEND_TRIPPER, Archetype
+from axolotl.archetypes import (
+    ARCHETYPES,
+    TARGET_SOC_PREFERENCES,
+    WEEKEND_TRIPPER,
+    Archetype,
+)
 from axolotl.config import SimulationConfig
 from axolotl.engine import run_simulation
 from axolotl.prices import CHEAP_WINDOW_END_HOUR, CHEAP_WINDOW_START_HOUR
@@ -59,7 +64,12 @@ def test_plug_in_soc_recapitulates_archetype_table(index: int, tolerance: float)
     config, result = single_archetype_run(archetype)
     keep = result.plug_event_step >= config.burn_in_days * config.steps_per_day
     mean_plug_in_soc = result.plug_event_soc[keep].mean()
-    assert mean_plug_in_soc == pytest.approx(archetype.expected_plug_in_soc, abs=tolerance)
+    # The archetype table derives plug-in SoC from a flat 0.8 target; agents
+    # sample their target from the CNZ preference mix, so the expectation
+    # shifts by the difference between the mix's mean and the table's target.
+    mean_target = sum(target * weight for target, weight in TARGET_SOC_PREFERENCES)
+    expected = archetype.expected_plug_in_soc + (mean_target - archetype.target_soc)
+    assert mean_plug_in_soc == pytest.approx(expected, abs=tolerance)
 
 
 def test_infrequent_chargers_plug_in_rarely() -> None:
@@ -89,11 +99,27 @@ def test_smart_charging_meets_target_by_departure() -> None:
     # complete by the earlier of the ready-by time and their own departure.
     at_target = []
     for i, agent in enumerate(result.agents):
-        plug_out_step = round(agent.plug_out_hour / step_hours) % spd
         for day in range(config.burn_in_days, config.n_days):
+            is_weekend = day % 7 in (5, 6)
+            hour = agent.weekend_plug_out_hour if is_weekend else agent.plug_out_hour
+            plug_out_step = round(hour / step_hours) % spd
             soc_before_leaving = result.soc[i, day * spd + plug_out_step - 1]
-            at_target.append(soc_before_leaving >= agent.archetype.target_soc - 0.01)
+            at_target.append(soc_before_leaving >= agent.target_soc - 0.01)
     assert np.mean(at_target) > 0.95
+
+
+def test_weekend_timing_shifts_show_in_plugged_share() -> None:
+    config, result = single_archetype_run(AVERAGE_UK)
+    spd = config.steps_per_day
+    plugged = result.plugged.reshape(config.n_agents, config.n_days, spd)
+    weekdays = [d for d in range(config.burn_in_days, config.n_days) if d % 7 not in (5, 6)]
+    weekends = [d for d in range(config.burn_in_days, config.n_days) if d % 7 in (5, 6)]
+    at_1730 = int(17.5 / 24 * spd)
+    at_0830 = int(8.5 / 24 * spd)
+    # Weekend arrivals are ~1h earlier and departures ~2h later, so more of
+    # the fleet is plugged in at 17:30 and still plugged in at 08:30.
+    assert plugged[:, weekends, at_1730].mean() > plugged[:, weekdays, at_1730].mean() + 0.2
+    assert plugged[:, weekends, at_0830].mean() > plugged[:, weekdays, at_0830].mean() + 0.2
 
 
 def test_always_plugged_in_stays_plugged() -> None:

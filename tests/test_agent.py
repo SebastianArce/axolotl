@@ -2,9 +2,10 @@ import numpy as np
 import pytest
 
 from axolotl.agent import sample_agent, sample_population
-from axolotl.archetypes import ARCHETYPES
+from axolotl.archetypes import ARCHETYPES, TARGET_SOC_PREFERENCES
 
 AVERAGE_UK = ARCHETYPES[0]
+MEAN_TARGET_SOC = sum(target * weight for target, weight in TARGET_SOC_PREFERENCES)
 
 
 def test_same_seed_gives_identical_agents() -> None:
@@ -18,6 +19,34 @@ def test_zero_spread_reproduces_archetype_means() -> None:
     assert agent.plug_in_hour == pytest.approx(AVERAGE_UK.plug_in_hour)
     assert agent.plug_out_hour == pytest.approx(AVERAGE_UK.plug_out_hour)
     assert agent.mean_daily_miles == pytest.approx(AVERAGE_UK.mean_daily_miles)
+    assert agent.target_soc == AVERAGE_UK.target_soc
+    assert agent.weekend_plug_in_hour == pytest.approx(
+        AVERAGE_UK.plug_in_hour + AVERAGE_UK.weekend_plug_in_shift_hours
+    )
+    assert agent.weekend_plug_out_hour == pytest.approx(
+        AVERAGE_UK.plug_out_hour + AVERAGE_UK.weekend_plug_out_shift_hours
+    )
+
+
+def test_weekend_times_shift_and_spread_wider() -> None:
+    rng = np.random.default_rng(6)
+    agents = [sample_agent(AVERAGE_UK, rng) for _ in range(3_000)]
+    weekend_in = [a.weekend_plug_in_hour for a in agents]
+    weekend_out = [a.weekend_plug_out_hour for a in agents]
+    # CNZ report Figs. 4-5: weekend plug-ins ~1h earlier, plug-outs ~2h later.
+    assert np.mean(weekend_in) == pytest.approx(17.0, abs=0.1)
+    assert np.mean(weekend_out) == pytest.approx(9.0, abs=0.1)
+    # ...and more spread out than the weekday habit.
+    assert np.std(weekend_in) > np.std([a.plug_in_hour for a in agents])
+
+
+def test_target_soc_sampled_from_preference_mix() -> None:
+    rng = np.random.default_rng(5)
+    agents = [sample_agent(AVERAGE_UK, rng) for _ in range(5_000)]
+    allowed_targets = {target for target, _ in TARGET_SOC_PREFERENCES}
+    assert {a.target_soc for a in agents} == allowed_targets
+    mean_target = np.mean([a.target_soc for a in agents])
+    assert mean_target == pytest.approx(MEAN_TARGET_SOC, abs=0.01)
 
 
 def test_population_recovers_archetype_means() -> None:
