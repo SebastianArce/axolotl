@@ -1,6 +1,5 @@
-from dataclasses import replace
-
 import pytest
+from pydantic import ValidationError
 
 from axolotl.archetypes import ARCHETYPES, WEEKEND_TRIPPER, Archetype, ChargingStrategy
 
@@ -57,11 +56,11 @@ def test_weekend_multiplier_preserves_weekly_miles() -> None:
 
 def test_invalid_archetype_values_rejected() -> None:
     base = by_name("Average (UK)")
-    with pytest.raises(ValueError, match="population_share"):
-        replace(base, population_share=1.5)
-    with pytest.raises(ValueError, match="target_soc"):
-        replace(base, target_soc=0.0)
-    with pytest.raises(ValueError, match="plug_in_frequency_per_day"):
-        replace(base, plug_in_frequency_per_day=0.0)
-    with pytest.raises(ValueError, match="weekend_miles_multiplier"):
-        replace(base, weekend_miles_multiplier=4.0)
+    with pytest.raises(ValidationError, match="population_share"):
+        Archetype.model_validate({**base.model_dump(), "population_share": 1.5})
+    with pytest.raises(ValidationError, match="target_soc"):
+        Archetype.model_validate({**base.model_dump(), "target_soc": 0.0})
+    with pytest.raises(ValidationError, match="plug_in_frequency_per_day"):
+        Archetype.model_validate({**base.model_dump(), "plug_in_frequency_per_day": 0.0})
+    with pytest.raises(ValidationError, match="weekend_miles_multiplier"):
+        Archetype.model_validate({**base.model_dump(), "weekend_miles_multiplier": 4.0})
