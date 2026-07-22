@@ -40,7 +40,7 @@ class Archetype(BaseModel):
     annual_miles: float = Field(gt=0)
     battery_kwh: float = Field(gt=0)
     efficiency_mi_per_kwh: float = Field(gt=0)
-    # Probability of plugging in on any given day (1.0 = daily, 0.2 = every ~5 days).
+    # How often the driver plugs in (1.0 = daily, 0.2 = every 5th day).
     plug_in_frequency_per_day: float = Field(gt=0, le=1)
     charger_kw: float = Field(gt=0)
     # Mean plug-in/plug-out times, fractional local hours (18.5 = 18:30).

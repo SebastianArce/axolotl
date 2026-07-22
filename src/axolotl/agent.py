@@ -55,16 +55,22 @@ def sample_population(
     """Sample a population with archetype counts proportional to population share.
 
     Shares are renormalised over the given archetypes, so a subset (e.g. a
-    dashboard multi-select) still yields a full population. Counts use
-    largest-remainder rounding so they always sum to `n_agents` exactly.
+    dashboard multi-select) still yields a full population. If all selected
+    shares are zero (e.g. illustrative presets), agents split evenly. Counts
+    use largest-remainder rounding so they always sum to `n_agents` exactly.
     """
     if n_agents <= 0:
         raise ValueError(f"n_agents must be positive, got {n_agents}")
+    if not archetypes:
+        raise ValueError("archetypes must not be empty")
     total_share = sum(a.population_share for a in archetypes)
-    if total_share <= 0:
-        raise ValueError("selected archetypes have zero total population share")
+    shares = (
+        [a.population_share / total_share for a in archetypes]
+        if total_share > 0
+        else [1 / len(archetypes)] * len(archetypes)
+    )
 
-    quotas = [a.population_share / total_share * n_agents for a in archetypes]
+    quotas = [share * n_agents for share in shares]
     counts = [int(q) for q in quotas]
     remainders = [q - c for q, c in zip(quotas, counts, strict=True)]
     for i in sorted(range(len(quotas)), key=lambda i: remainders[i], reverse=True)[
