@@ -15,6 +15,18 @@ WEEKEND_DAYS_PER_WEEK = 2
 # Above this, weekday miles would have to be negative to preserve annual mileage.
 MAX_WEEKEND_MILES_MULTIPLIER = 7 / WEEKEND_DAYS_PER_WEEK
 
+# Per-agent charging-target preferences, as (target SoC, probability). CNZ
+# report Fig. 2: the three most common preferences are 80%, 90% and 100%
+# (25/24/23% of users); the remaining 28% mostly sit below 80% and are
+# bucketed here at 70%. Population mean ~0.84 — close to the archetype
+# table's flat 0.8, so its derived plug-in SoC figures remain recapitulated.
+TARGET_SOC_PREFERENCES: tuple[tuple[float, float], ...] = (
+    (0.7, 0.28),
+    (0.8, 0.25),
+    (0.9, 0.24),
+    (1.0, 0.23),
+)
+
 
 class ChargingStrategy(StrEnum):
     """How the car charges while plugged in."""

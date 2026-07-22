@@ -82,7 +82,7 @@ class _AgentState:
         self.plug_phase = int(rng.integers(self.plug_interval_days))
         # Start at midnight of day 0: home, plugged in at target SoC. The
         # burn-in period lets each agent settle into its own rhythm.
-        self.soc = agent.archetype.target_soc
+        self.soc = agent.target_soc
         self.plugged = True
         self.is_away = False
         self.depletion_per_step = 0.0
@@ -143,7 +143,7 @@ def run_simulation(
                 state.soc = max(state.soc - state.depletion_per_step, 0.0)
             elif (
                 state.plugged
-                and state.soc < archetype.target_soc
+                and state.soc < state.agent.target_soc
                 and (
                     archetype.strategy is ChargingStrategy.IMMEDIATE
                     or step in state.charge_schedule
@@ -195,7 +195,7 @@ def _smart_schedule(
     """
     agent = state.agent
     archetype = agent.archetype
-    kwh_needed = (archetype.target_soc - state.soc) * archetype.battery_kwh
+    kwh_needed = (agent.target_soc - state.soc) * archetype.battery_kwh
     if kwh_needed <= 0:
         return set()
     steps_needed = math.ceil(kwh_needed / (archetype.charger_kw * step_hours))
@@ -223,5 +223,5 @@ def _charge(state: _AgentState, step_hours: float) -> None:
     """Add one timestep of charge, never exceeding the target SoC."""
     archetype = state.agent.archetype
     max_kwh = archetype.charger_kw * step_hours
-    headroom_kwh = (archetype.target_soc - state.soc) * archetype.battery_kwh
+    headroom_kwh = (state.agent.target_soc - state.soc) * archetype.battery_kwh
     state.soc += min(max_kwh, headroom_kwh) / archetype.battery_kwh

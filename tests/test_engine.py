@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from axolotl.archetypes import ARCHETYPES, WEEKEND_TRIPPER, Archetype
+from axolotl.archetypes import (
+    ARCHETYPES,
+    TARGET_SOC_PREFERENCES,
+    WEEKEND_TRIPPER,
+    Archetype,
+)
 from axolotl.config import SimulationConfig
 from axolotl.engine import run_simulation
 from axolotl.prices import CHEAP_WINDOW_END_HOUR, CHEAP_WINDOW_START_HOUR
@@ -59,7 +64,12 @@ def test_plug_in_soc_recapitulates_archetype_table(index: int, tolerance: float)
     config, result = single_archetype_run(archetype)
     keep = result.plug_event_step >= config.burn_in_days * config.steps_per_day
     mean_plug_in_soc = result.plug_event_soc[keep].mean()
-    assert mean_plug_in_soc == pytest.approx(archetype.expected_plug_in_soc, abs=tolerance)
+    # The archetype table derives plug-in SoC from a flat 0.8 target; agents
+    # sample their target from the CNZ preference mix, so the expectation
+    # shifts by the difference between the mix's mean and the table's target.
+    mean_target = sum(target * weight for target, weight in TARGET_SOC_PREFERENCES)
+    expected = archetype.expected_plug_in_soc + (mean_target - archetype.target_soc)
+    assert mean_plug_in_soc == pytest.approx(expected, abs=tolerance)
 
 
 def test_infrequent_chargers_plug_in_rarely() -> None:
@@ -92,7 +102,7 @@ def test_smart_charging_meets_target_by_departure() -> None:
         plug_out_step = round(agent.plug_out_hour / step_hours) % spd
         for day in range(config.burn_in_days, config.n_days):
             soc_before_leaving = result.soc[i, day * spd + plug_out_step - 1]
-            at_target.append(soc_before_leaving >= agent.archetype.target_soc - 0.01)
+            at_target.append(soc_before_leaving >= agent.target_soc - 0.01)
     assert np.mean(at_target) > 0.95
 
 

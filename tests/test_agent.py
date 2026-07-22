@@ -2,9 +2,10 @@ import numpy as np
 import pytest
 
 from axolotl.agent import sample_agent, sample_population
-from axolotl.archetypes import ARCHETYPES
+from axolotl.archetypes import ARCHETYPES, TARGET_SOC_PREFERENCES
 
 AVERAGE_UK = ARCHETYPES[0]
+MEAN_TARGET_SOC = sum(target * weight for target, weight in TARGET_SOC_PREFERENCES)
 
 
 def test_same_seed_gives_identical_agents() -> None:
@@ -18,6 +19,16 @@ def test_zero_spread_reproduces_archetype_means() -> None:
     assert agent.plug_in_hour == pytest.approx(AVERAGE_UK.plug_in_hour)
     assert agent.plug_out_hour == pytest.approx(AVERAGE_UK.plug_out_hour)
     assert agent.mean_daily_miles == pytest.approx(AVERAGE_UK.mean_daily_miles)
+    assert agent.target_soc == AVERAGE_UK.target_soc
+
+
+def test_target_soc_sampled_from_preference_mix() -> None:
+    rng = np.random.default_rng(5)
+    agents = [sample_agent(AVERAGE_UK, rng) for _ in range(5_000)]
+    allowed_targets = {target for target, _ in TARGET_SOC_PREFERENCES}
+    assert {a.target_soc for a in agents} == allowed_targets
+    mean_target = np.mean([a.target_soc for a in agents])
+    assert mean_target == pytest.approx(MEAN_TARGET_SOC, abs=0.01)
 
 
 def test_population_recovers_archetype_means() -> None:
