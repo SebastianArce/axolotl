@@ -115,7 +115,10 @@ def _fetch_agile_rates(
 
     owns_client = client is None
     if client is None:
-        client = httpx.Client(timeout=10)
+        # Transport retries cover transient connection failures (DNS, dropped
+        # handshakes) without delaying the synthetic fallback when the API is
+        # genuinely down: HTTP error responses are not retried.
+        client = httpx.Client(timeout=10, transport=httpx.HTTPTransport(retries=2))
     rates: list[tuple[datetime, float]] = []
     try:
         while url:
