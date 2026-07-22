@@ -1,0 +1,12 @@
+.git/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.github/
+.claude/
+.agents/
+docs/
+assets/
+tests/
+Dockerfile
+.dockerignore
