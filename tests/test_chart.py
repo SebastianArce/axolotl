@@ -65,13 +65,35 @@ def test_agent_chart_opens_on_one_day_with_range_picker(result: SimulationResult
     x0, x1 = fig.layout.xaxis.range
     assert (x1 - x0).days == 1
     assert fig.layout.xaxis.rangeslider.visible
-    assert [button.label for button in fig.layout.xaxis.rangeselector.buttons] == [
-        "1d",
-        "3d",
-        "1w",
-        "2w",
-        "All",
-    ]
+    # The 7-day fixture keeps 5 days after burn-in, so 1w/2w would duplicate All.
+    assert [button.label for button in fig.layout.updatemenus[0].buttons] == ["1d", "3d", "All"]
+
+
+def test_agent_chart_range_buttons_stay_within_the_data(result: SimulationResult) -> None:
+    fig = build_agent_chart(result, agent_index=0)
+    data_start = fig.data[1].x[0]
+    step = fig.data[1].x[1] - data_start
+    data_end = fig.data[1].x[-1] + step
+    for button in fig.layout.updatemenus[0].buttons:
+        range_start, range_end = button.args[0]["xaxis.range"]
+        assert range_start == data_start
+        assert range_end <= data_end
+
+
+def test_agent_chart_with_prices_adds_price_panel(result: SimulationResult) -> None:
+    spd = result.config.steps_per_day
+    fig = build_agent_chart(
+        result,
+        agent_index=0,
+        price_values=synthetic_price_profile(spd),
+        price_source="synthetic",
+    )
+    price_traces = [t for t in fig.data if t.name and "price" in t.name.lower()]
+    assert len(price_traces) == 1
+    assert price_traces[0].yaxis == "y2"
+    # Tiled across every displayed step, plus the closing point at the window end.
+    n_kept_steps = (result.config.n_days - result.config.burn_in_days) * spd
+    assert len(price_traces[0].y) == n_kept_steps + 1
 
 
 def test_chart_with_prices_adds_price_panel() -> None:
