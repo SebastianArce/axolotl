@@ -95,7 +95,7 @@ def _add_plugged_in_bars(
             marker_color=PLUGGED_IN_COLOR,
             width=step_ms * 0.66,
             offset=step_ms * 0.17,
-            hovertemplate="%{y:.1f}% of fleet<extra>Plugged in</extra>",
+            hovertemplate="%{y:.1f}% of fleet<extra><b>Plugged in</b></extra>",
         )
     )
 
@@ -151,7 +151,7 @@ def _add_soc_layers(fig: Figure, slots: list[datetime], profile: pl.DataFrame) -
             hovertemplate=(
                 "%{y:.1f}% mean · 25–75th: %{customdata[1]:.0f}–%{customdata[2]:.0f}% · "
                 "5–95th: %{customdata[0]:.0f}–%{customdata[3]:.0f}%"
-                "<extra>State of charge</extra>"
+                "<extra><b>State of charge</b></extra>"
             ),
         )
     )
@@ -204,11 +204,11 @@ def _add_price_panel(
         customdata = list(zip(closed(lower), closed(upper), strict=True))
         hovertemplate = (
             "%{y:.1f} p/kWh mean · 5–95th: %{customdata[0]:.1f}–%{customdata[1]:.1f} p/kWh"
-            "<extra>Price</extra>"
+            "<extra><b>Price</b></extra>"
         )
     else:
         customdata = None
-        hovertemplate = "%{y:.1f} p/kWh<extra>Price</extra>"
+        hovertemplate = "%{y:.1f} p/kWh<extra><b>Price</b></extra>"
     fig.add_trace(
         Scatter(
             x=x,
@@ -261,8 +261,8 @@ def _style(fig: Figure, base: datetime, with_prices: bool) -> None:
             "tickvals": [base + timedelta(hours=h) for h in range(0, 25, 3)],
             "ticktext": [f"{h:02d}:00" for h in range(0, 25, 3)],
             # The anchor date is arbitrary and never shown; the hover header
-            # names the half-hour slot.
-            "hoverformat": "%H:%M",
+            # names the half-hour slot, labelled like the rows beneath it.
+            "hoverformat": "<b>Time</b> %H:%M",
             "showgrid": False,
             "linecolor": BASELINE,
             "ticks": "outside",
@@ -348,7 +348,7 @@ def build_agent_chart(
             line={"width": 2.5, "color": SOC_COLOR},
             name="State of charge",
             legendrank=2,
-            hovertemplate="%{y:.1f}%<extra>State of charge</extra>",
+            hovertemplate="%{y:.1f}%<extra><b>State of charge</b></extra>",
         )
     )
 
@@ -368,7 +368,7 @@ def build_agent_chart(
             marker={"size": 9, "color": SOC_COLOR, "line": {"width": 2, "color": SURFACE}},
             name="Plug-in event",
             legendrank=3,
-            hovertemplate="plugged in at %{y:.1f}%<extra>Plug-in event</extra>",
+            hovertemplate="plugged in at %{y:.1f}%<extra><b>Plug-in event</b></extra>",
         )
     )
 
@@ -473,7 +473,7 @@ def build_agent_chart(
                 {"dtickrange": [None, 86_400_000], "value": "%H:%M<br>%a"},
                 {"dtickrange": [86_400_000, None], "value": "%a"},
             ],
-            "hoverformat": "%a %H:%M",
+            "hoverformat": "<b>Time</b> %a %H:%M",
             "showgrid": True,
             "gridcolor": GRIDLINE,
             "linecolor": BASELINE,
@@ -537,6 +537,6 @@ def _add_agent_price_panel(
             fillcolor=PRICE_FILL,
             name=f"Electricity price ({price_source or 'profile'})",
             legendrank=4,
-            hovertemplate="%{y:.1f} p/kWh<extra>Price</extra>",
+            hovertemplate="%{y:.1f} p/kWh<extra><b>Price</b></extra>",
         )
     )
