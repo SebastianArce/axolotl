@@ -120,6 +120,10 @@ def test_population_chart_price_band_draws_a_wash() -> None:
     band_traces = [t for t in fig.data if t.name == "Price 5–95th pct"]
     assert len(band_traces) == 1
     assert band_traces[0].yaxis == "y2"
+    # The band's values surface in the mean price line's hover.
+    price_line = next(t for t in fig.data if t.name and t.name.startswith("Electricity price"))
+    assert "5–95th" in price_line.hovertemplate
+    assert price_line.customdata is not None
 
 
 def test_chart_with_prices_adds_price_panel() -> None:

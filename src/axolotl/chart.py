@@ -161,8 +161,8 @@ def _add_price_panel(
     def closed(values: list[float]) -> list[float]:
         return [*values, values[-1]]
 
-    if price_band is not None:
-        lower, upper = price_band
+    lower, upper = price_band if price_band is not None else (None, None)
+    if lower is not None and upper is not None:
         fig.add_trace(
             Scatter(
                 x=[*hours, 24],
@@ -188,6 +188,17 @@ def _add_price_panel(
                 hoverinfo="skip",
             )
         )
+    # Like the SoC mean line, the price line carries its band's values in the
+    # unified hover (the band traces themselves stay hover-silent).
+    if lower is not None and upper is not None:
+        customdata = list(zip(closed(lower), closed(upper), strict=True))
+        hovertemplate = (
+            "%{y:.1f} p/kWh mean · 5–95th: %{customdata[0]:.1f}–%{customdata[1]:.1f}"
+            "<extra>Price</extra>"
+        )
+    else:
+        customdata = None
+        hovertemplate = "%{y:.1f} p/kWh<extra>Price</extra>"
     fig.add_trace(
         Scatter(
             x=[*hours, 24],
@@ -201,7 +212,8 @@ def _add_price_panel(
             fillcolor=None if price_band is not None else PRICE_FILL,
             name=f"Electricity price ({price_source or 'profile'})",
             legendrank=5,
-            hovertemplate="%{y:.1f} p/kWh<extra>Price</extra>",
+            customdata=customdata,
+            hovertemplate=hovertemplate,
         )
     )
 
