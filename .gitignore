@@ -17,7 +17,3 @@ dist/
 
 # OS
 .DS_Store
-
-# Local agent tooling
-.claude/
-.agents/

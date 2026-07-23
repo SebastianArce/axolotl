@@ -1,12 +1,11 @@
-.git/
-.venv/
-.pytest_cache/
-.ruff_cache/
-.github/
-.claude/
-.agents/
+# Hidden files and directories, except the streamlit config the app needs
+.*
+!.streamlit
+
+# Not needed at runtime
 docs/
 assets/
 tests/
 Dockerfile
-.dockerignore
+*.md
+!README.md
