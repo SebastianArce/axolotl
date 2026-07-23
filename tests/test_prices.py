@@ -132,10 +132,10 @@ def test_get_price_series_without_live_uses_synthetic() -> None:
 
 def test_price_time_of_day_stats() -> None:
     # Two 4-slot days: slot means are the midpoints, percentiles bracket them.
-    mean, p10, p90 = price_time_of_day_stats([0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0], 4)
+    mean, p05, p95 = price_time_of_day_stats([0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0], 4)
     assert mean == [5.0, 6.0, 7.0, 8.0]
-    assert p10 == [1.0, 2.0, 3.0, 4.0]
-    assert p90 == [9.0, 10.0, 11.0, 12.0]
+    assert p05 == [0.5, 1.5, 2.5, 3.5]
+    assert p95 == [9.5, 10.5, 11.5, 12.5]
 
 
 def test_resample_down_averages_and_up_repeats() -> None:

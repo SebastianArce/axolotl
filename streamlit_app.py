@@ -113,13 +113,13 @@ with st.container(border=True):
         show_prices = st.toggle("Show price panel", value=True)
 
     profile = time_of_day_profile(result, DAY_FILTERS[day_filter_label])
-    price_mean, price_p10, price_p90 = price_time_of_day_stats(price_values, steps_per_day)
+    price_mean, price_p05, price_p95 = price_time_of_day_stats(price_values, steps_per_day)
     st.plotly_chart(
         build_population_chart(
             profile,
             price_values=price_mean if show_prices else None,
             price_source=price_label,
-            price_band=(price_p10, price_p90) if show_prices else None,
+            price_band=(price_p05, price_p95) if show_prices else None,
         ),
         width="stretch",
     )

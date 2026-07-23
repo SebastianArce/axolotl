@@ -117,7 +117,7 @@ def test_population_chart_price_band_draws_a_wash() -> None:
         price_source="synthetic",
         price_band=([p - 1 for p in mean], [p + 1 for p in mean]),
     )
-    band_traces = [t for t in fig.data if t.name == "Price 10–90th pct"]
+    band_traces = [t for t in fig.data if t.name == "Price 5–95th pct"]
     assert len(band_traces) == 1
     assert band_traces[0].yaxis == "y2"
 

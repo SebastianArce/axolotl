@@ -33,7 +33,7 @@ SOC_BAND_OUTER = "rgba(235, 104, 52, 0.10)"  # 5-95th percentile wash
 SOC_BAND_INNER = "rgba(235, 104, 52, 0.16)"  # 25-75th percentile wash
 PRICE_COLOR = "#1baf7a"  # aqua
 PRICE_FILL = "rgba(27, 175, 122, 0.08)"
-PRICE_BAND = "rgba(27, 175, 122, 0.14)"  # day-to-day 10-90th percentile wash
+PRICE_BAND = "rgba(27, 175, 122, 0.14)"  # day-to-day 5-95th percentile wash
 
 SURFACE = "#fcfcfb"
 INK_PRIMARY = "#0b0b0b"
@@ -239,7 +239,7 @@ def _add_price_panel(
                 line={"width": 0, "shape": "hv"},
                 fill="tonexty",
                 fillcolor=PRICE_BAND,
-                name="Price 10–90th pct",
+                name="Price 5–95th pct",
                 legendrank=6,
                 hoverinfo="skip",
             )

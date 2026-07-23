@@ -164,12 +164,12 @@ def _fill_missing_slots(series: list[list[float | None]]) -> list[float]:
 def price_time_of_day_stats(
     values: list[float], steps_per_day: int
 ) -> tuple[list[float], list[float], list[float]]:
-    """Per-slot (mean, 10th, 90th percentile) across the days of a series."""
+    """Per-slot (mean, 5th, 95th percentile) across the days of a series."""
     by_day = np.asarray(values).reshape(-1, steps_per_day)
     return (
         by_day.mean(axis=0).tolist(),
-        np.percentile(by_day, 10, axis=0).tolist(),
-        np.percentile(by_day, 90, axis=0).tolist(),
+        np.percentile(by_day, 5, axis=0).tolist(),
+        np.percentile(by_day, 95, axis=0).tolist(),
     )
 
 
