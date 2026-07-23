@@ -53,10 +53,11 @@ def test_agent_chart_shows_trajectory_and_plug_events(result: SimulationResult) 
     assert len(fig.data[1].y) == 5 * spd
 
 
-def test_agent_chart_clamps_window_to_simulation(result: SimulationResult) -> None:
+def test_agent_chart_defaults_to_full_run_after_burn_in(result: SimulationResult) -> None:
     n_kept_days = result.config.n_days - result.config.burn_in_days
-    fig = build_agent_chart(result, agent_index=3, n_days=999)
-    assert len(fig.data[1].y) == n_kept_days * result.config.steps_per_day
+    expected_steps = n_kept_days * result.config.steps_per_day
+    assert len(build_agent_chart(result, agent_index=3).data[1].y) == expected_steps
+    assert len(build_agent_chart(result, agent_index=3, n_days=999).data[1].y) == expected_steps
 
 
 def test_chart_with_prices_adds_price_panel() -> None:

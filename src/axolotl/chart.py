@@ -301,11 +301,15 @@ def _style(fig: Figure, with_prices: bool) -> None:
         )
 
 
-def build_agent_chart(result: SimulationResult, agent_index: int, n_days: int) -> Figure:
+def build_agent_chart(
+    result: SimulationResult, agent_index: int, n_days: int | None = None
+) -> Figure:
     """One driver's SoC trajectory and plug-in sessions over consecutive days.
 
-    Shows `n_days` starting after burn-in. Plugged-in periods are shaded in
-    the population chart's blue; each plug-in event is marked at the SoC it
+    Spans the whole simulation after burn-in by default (`n_days` limits it),
+    so the full behaviour — charging cadence, weekday/weekend rhythm — is
+    visible at once; zoom in for detail. Plugged-in periods are shaded in the
+    population chart's blue; each plug-in event is marked at the SoC it
     happened, since "SoC at plug-in" is a headline output of the simulator.
     """
     config = result.config
@@ -313,7 +317,7 @@ def build_agent_chart(result: SimulationResult, agent_index: int, n_days: int) -
     step_hours = 24 / spd
     start_day = config.burn_in_days
     first = start_day * spd
-    last = min((start_day + n_days) * spd, config.n_steps)
+    last = config.n_steps if n_days is None else min((start_day + n_days) * spd, config.n_steps)
 
     # A real time axis (anchored to an arbitrary Monday, matching the
     # simulation's dateless week) so ticks show day names and the hover
@@ -415,7 +419,8 @@ def build_agent_chart(result: SimulationResult, agent_index: int, n_days: int) -
         margin={"l": 56, "r": 36, "t": 48, "b": 40},
         xaxis={
             "range": [base, window_end],
-            "dtick": 24 * 60 * 60 * 1000,  # one tick per midnight
+            # One tick per midnight; weekly (Mondays) when the window is long.
+            "dtick": (1 if (last - first) <= 14 * spd else 7) * 24 * 60 * 60 * 1000,
             "tickformat": "%a",  # day name only; the anchor date is arbitrary
             "hoverformat": "%a %H:%M",
             "showgrid": True,

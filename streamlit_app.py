@@ -121,7 +121,6 @@ present_archetypes = sorted(
     {agent.archetype.name for agent in result.agents},
     key=[a.name for a in ALL_ARCHETYPES.values()].index,
 )
-max_days = result.config.n_days - result.config.burn_in_days
 with st.container(horizontal=True):
     chosen_archetype = st.selectbox("Archetype", present_archetypes)
     driver_indices = [
@@ -130,13 +129,10 @@ with st.container(horizontal=True):
     driver_number = int(
         st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
     )
-    days_shown = int(
-        st.slider("Days shown", min_value=2, max_value=max_days, value=min(7, max_days))
-    )
 
 agent_index = driver_indices[driver_number - 1]
 agent = result.agents[agent_index]
-st.plotly_chart(build_agent_chart(result, agent_index, days_shown), width="stretch")
+st.plotly_chart(build_agent_chart(result, agent_index), width="stretch")
 
 
 def fmt_hour(hour: float) -> str:
