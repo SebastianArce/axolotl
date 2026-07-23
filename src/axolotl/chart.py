@@ -419,6 +419,10 @@ def build_agent_chart(
 
     fig.update_layout(
         template="none",
+        # A constant uirevision preserves the viewer's zoom/pan when the
+        # figure is rebuilt for a different driver; the one-day opening
+        # range below only applies on first render.
+        uirevision="agent-chart",
         height=540 if with_prices else 420,
         paper_bgcolor=SURFACE,
         plot_bgcolor=SURFACE,

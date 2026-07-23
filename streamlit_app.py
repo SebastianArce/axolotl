@@ -155,6 +155,8 @@ with st.container(border=True):
 
     agent_index = driver_indices[driver_number - 1]
     agent = result.agents[agent_index]
+    # The stable key lets the chart update in place, so uirevision can keep
+    # the viewer's zoom when switching driver.
     st.plotly_chart(
         build_agent_chart(
             result,
@@ -163,6 +165,7 @@ with st.container(border=True):
             price_source=price_label,
         ),
         width="stretch",
+        key="agent_chart",
     )
 
     cadence = max(1, round(1 / agent.archetype.plug_in_frequency_per_day))
