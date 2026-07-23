@@ -397,7 +397,7 @@ def build_agent_chart(
 
     fig.update_layout(
         template="none",
-        height=380,
+        height=420,
         paper_bgcolor=SURFACE,
         plot_bgcolor=SURFACE,
         font={"family": FONT_FAMILY, "color": INK_PRIMARY, "size": 13},
@@ -411,17 +411,46 @@ def build_agent_chart(
             "orientation": "h",
             "traceorder": "normal",
             "yanchor": "bottom",
-            "y": 1.04,
+            "y": 1.06,
             "xanchor": "right",
             "x": 1,
             "font": {"size": 12, "color": INK_SECONDARY},
         },
-        margin={"l": 56, "r": 36, "t": 48, "b": 40},
+        margin={"l": 56, "r": 36, "t": 56, "b": 24},
         xaxis={
-            "range": [base, window_end],
-            # One tick per midnight; weekly (Mondays) when the window is long.
-            "dtick": (1 if (last - first) <= 14 * spd else 7) * 24 * 60 * 60 * 1000,
-            "tickformat": "%a",  # day name only; the anchor date is arbitrary
+            # Open on a single day; the range picker and slider reach the rest.
+            "range": [base, base + timedelta(days=1)],
+            "rangeselector": {
+                "buttons": [
+                    {"count": 1, "step": "day", "label": "1d"},
+                    {"count": 3, "step": "day", "label": "3d"},
+                    {"count": 7, "step": "day", "label": "1w"},
+                    {"count": 14, "step": "day", "label": "2w"},
+                    {"step": "all", "label": "All"},
+                ],
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.06,
+                "yanchor": "bottom",
+                "bgcolor": SURFACE,
+                "activecolor": PLUGGED_IN_WASH,
+                "bordercolor": GRIDLINE,
+                "borderwidth": 1,
+                "font": {"size": 11, "color": INK_SECONDARY},
+            },
+            "rangeslider": {
+                "visible": True,
+                "thickness": 0.09,
+                "bgcolor": SURFACE,
+                "bordercolor": GRIDLINE,
+                "borderwidth": 1,
+            },
+            # Hour labels when zoomed in, day names when zoomed out — the
+            # anchor date is arbitrary and never shown.
+            "tickformatstops": [
+                {"dtickrange": [None, 86_400_000], "value": "%H:%M"},
+                {"dtickrange": [86_400_000, None], "value": "%a"},
+            ],
             "hoverformat": "%a %H:%M",
             "showgrid": True,
             "gridcolor": GRIDLINE,

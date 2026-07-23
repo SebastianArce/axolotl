@@ -60,6 +60,20 @@ def test_agent_chart_defaults_to_full_run_after_burn_in(result: SimulationResult
     assert len(build_agent_chart(result, agent_index=3, n_days=999).data[1].y) == expected_steps
 
 
+def test_agent_chart_opens_on_one_day_with_range_picker(result: SimulationResult) -> None:
+    fig = build_agent_chart(result, agent_index=0)
+    x0, x1 = fig.layout.xaxis.range
+    assert (x1 - x0).days == 1
+    assert fig.layout.xaxis.rangeslider.visible
+    assert [button.label for button in fig.layout.xaxis.rangeselector.buttons] == [
+        "1d",
+        "3d",
+        "1w",
+        "2w",
+        "All",
+    ]
+
+
 def test_chart_with_prices_adds_price_panel() -> None:
     profile, steps_per_day = make_profile()
     fig = build_population_chart(
