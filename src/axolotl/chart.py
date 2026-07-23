@@ -193,7 +193,7 @@ def _add_price_panel(
     if lower is not None and upper is not None:
         customdata = list(zip(closed(lower), closed(upper), strict=True))
         hovertemplate = (
-            "%{y:.1f} p/kWh mean · 5–95th: %{customdata[0]:.1f}–%{customdata[1]:.1f}"
+            "%{y:.1f} p/kWh mean · 5–95th: %{customdata[0]:.1f}–%{customdata[1]:.1f} p/kWh"
             "<extra>Price</extra>"
         )
     else:
