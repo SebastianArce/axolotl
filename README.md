@@ -129,7 +129,7 @@ charge taper near full; seasonal efficiency; an HTTP API over the core package.
 
 ```sh
 uv sync                  # install (Python 3.13+)
-uv run pytest            # 58 tests
+uv run pytest            # 59 tests
 uv run ruff check .      # lint
 uv run ruff format .     # format
 uv run ty check          # type check

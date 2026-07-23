@@ -407,6 +407,24 @@ def build_agent_chart(
         _add_agent_peak_windows(fig, base, (last - first) // spd, price_values)
         _add_agent_price_panel(fig, times, step_hours, price_values, price_source)
 
+    # Range buttons jump to spans anchored at the start of the data. Plotly's
+    # built-in rangeselector steps backward from the current view's end, so on
+    # the first day "1w" would reach six days before the data and show an
+    # almost-empty chart. Spans that wouldn't differ from "All" are dropped.
+    total_days = (last - first) // spd
+    range_buttons = [
+        {
+            "label": label,
+            "method": "relayout",
+            "args": [{"xaxis.range": [base, base + timedelta(days=days)]}],
+        }
+        for days, label in ((1, "1d"), (3, "3d"), (7, "1w"), (14, "2w"))
+        if days < total_days
+    ]
+    range_buttons.append(
+        {"label": "All", "method": "relayout", "args": [{"xaxis.range": [base, window_end]}]}
+    )
+
     fig.update_layout(
         template="none",
         height=540 if with_prices else 420,
@@ -431,27 +449,25 @@ def build_agent_chart(
             "font": {"size": 12, "color": INK_SECONDARY},
         },
         margin={"l": 56, "r": 36, "t": 56, "b": 24},
-        xaxis={
-            # Open on a single day; the range picker and slider reach the rest.
-            "range": [base, base + timedelta(days=1)],
-            "rangeselector": {
-                "buttons": [
-                    {"count": 1, "step": "day", "label": "1d"},
-                    {"count": 3, "step": "day", "label": "3d"},
-                    {"count": 7, "step": "day", "label": "1w"},
-                    {"count": 14, "step": "day", "label": "2w"},
-                    {"step": "all", "label": "All"},
-                ],
+        updatemenus=[
+            {
+                "type": "buttons",
+                "direction": "right",
+                "buttons": range_buttons,
                 "x": 0,
                 "xanchor": "left",
                 "y": 1.06,
                 "yanchor": "bottom",
+                "showactive": True,
                 "bgcolor": SURFACE,
-                "activecolor": PLUGGED_IN_WASH,
                 "bordercolor": GRIDLINE,
                 "borderwidth": 1,
                 "font": {"size": 11, "color": INK_SECONDARY},
-            },
+            }
+        ],
+        xaxis={
+            # Open on a single day; the range buttons and slider reach the rest.
+            "range": [base, base + timedelta(days=1)],
             "rangeslider": {
                 "visible": True,
                 "thickness": 0.09,
