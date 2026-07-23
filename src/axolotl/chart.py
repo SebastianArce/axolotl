@@ -13,9 +13,7 @@ displayed day's actual prices, so both views read the same way.
 
 Design notes: the bars are deliberately translucent so the state-of-charge
 story reads first; direct labels are sparse by intent and everything else
-lives in the unified hover and the legend. The shaded window spanning both
-panels marks the priciest contiguous hours of the day — the grid peak
-flexible charging exists to avoid.
+lives in the unified hover and the legend.
 """
 
 from datetime import datetime, timedelta
@@ -41,13 +39,6 @@ INK_SECONDARY = "#52514e"
 INK_MUTED = "#898781"
 GRIDLINE = "#e1e0d9"
 BASELINE = "#c3c2b7"
-PEAK_WASH = "rgba(11, 11, 11, 0.06)"
-
-# Width of the highlighted peak window; its position is derived from the
-# price profile. The 17:00-20:00 fallback is GB's documented evening grid peak,
-# used when the chart is built without prices.
-PEAK_WINDOW_HOURS = 3
-DEFAULT_GRID_PEAK = (17.0, 20.0)
 
 FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 ANNOTATION_FONT = {"family": FONT_FAMILY, "size": 12, "color": INK_SECONDARY}
@@ -77,58 +68,12 @@ def build_population_chart(
     # unified hover across the SoC panel and the price panel together.
     fig = Figure()
 
-    _add_peak_window(fig, price_values, with_prices)
     _add_plugged_in_bars(fig, centers, profile, step)
     _add_soc_layers(fig, centers, profile)
     if with_prices:
         _add_price_panel(fig, hours, price_values, price_source, price_band)
     _style(fig, with_prices)
     return fig
-
-
-def _priciest_window(price_values: list[float]) -> tuple[float, float]:
-    """Start/end hours of the most expensive contiguous PEAK_WINDOW_HOURS."""
-    step_hours = 24 / len(price_values)
-    window = round(PEAK_WINDOW_HOURS / step_hours)
-    start = max(
-        range(len(price_values) - window + 1),
-        key=lambda i: sum(price_values[i : i + window]),
-    )
-    return start * step_hours, (start + window) * step_hours
-
-
-def _add_peak_window(fig: Figure, price_values: list[float] | None, with_prices: bool) -> None:
-    """Shade the priciest hours of the day across every panel."""
-    if price_values is not None:
-        peak_start, peak_end = _priciest_window(price_values)
-        label = f"priciest {PEAK_WINDOW_HOURS} hours"
-    else:
-        peak_start, peak_end = DEFAULT_GRID_PEAK
-        label = "evening grid peak"
-
-    # add_shape rather than add_vrect: the latter drops the shape silently
-    # under plotly 6.9. `yref="y domain"` spans a panel's full height.
-    for yref in ("y domain", "y2 domain") if with_prices else ("y domain",):
-        fig.add_shape(
-            type="rect",
-            x0=peak_start,
-            x1=peak_end,
-            y0=0,
-            y1=1,
-            xref="x",
-            yref=yref,
-            fillcolor=PEAK_WASH,
-            line_width=0,
-            layer="below",
-        )
-    fig.add_annotation(
-        x=(peak_start + peak_end) / 2,
-        y=99,
-        text=label,
-        showarrow=False,
-        font={**ANNOTATION_FONT, "size": 11, "color": INK_MUTED},
-        yanchor="top",
-    )
 
 
 def _add_plugged_in_bars(
@@ -427,7 +372,6 @@ def build_agent_chart(
     with_prices = price_values is not None
     if with_prices:
         window = _window_prices(price_values, first, last, spd)
-        _add_agent_peak_windows(fig, base, window, spd)
         _add_agent_price_panel(fig, times, step_hours, window, price_source)
 
     # Range buttons jump to spans anchored at the start of the data. Plotly's
@@ -545,38 +489,6 @@ def _window_prices(
     if len(price_values) == steps_per_day:
         return [price_values[step % steps_per_day] for step in range(first, last)]
     return list(price_values[first:last])
-
-
-def _add_agent_peak_windows(
-    fig: Figure, base: datetime, window_prices: list[float], steps_per_day: int
-) -> None:
-    """Shade each displayed day's own priciest hours across both panels."""
-    for day in range(len(window_prices) // steps_per_day):
-        day_prices = window_prices[day * steps_per_day : (day + 1) * steps_per_day]
-        peak_start, peak_end = _priciest_window(day_prices)
-        for yref in ("y domain", "y2 domain"):
-            fig.add_shape(
-                type="rect",
-                x0=base + timedelta(days=day, hours=peak_start),
-                x1=base + timedelta(days=day, hours=peak_end),
-                y0=0,
-                y1=1,
-                xref="x",
-                yref=yref,
-                fillcolor=PEAK_WASH,
-                line_width=0,
-                layer="below",
-            )
-        if day == 0:
-            # One sparse label on the opening day; the shading repeats daily.
-            fig.add_annotation(
-                x=base + timedelta(hours=(peak_start + peak_end) / 2),
-                y=99,
-                text=f"priciest {PEAK_WINDOW_HOURS} hours",
-                showarrow=False,
-                font={**ANNOTATION_FONT, "size": 11, "color": INK_MUTED},
-                yanchor="top",
-            )
 
 
 def _add_agent_price_panel(

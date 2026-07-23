@@ -52,7 +52,7 @@ into a typical day (the first two simulated days are discarded as burn-in, while
 agents settle from their arbitrary initial state): bars for the share of the
 fleet plugged in, a line and percentile bands for the state-of-charge
 distribution, and an aligned electricity-price panel showing the time-of-day
-mean with a 5–95th percentile day-to-day spread, priciest hours shaded. The
+mean with a 5–95th percentile day-to-day spread. The
 individual-driver chart shows any single agent's SoC trajectory and plug-in
 sessions across consecutive days — the agent-level output the population
 aggregates are built from, and a direct way to sanity-check behaviour one
