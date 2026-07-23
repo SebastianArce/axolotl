@@ -84,7 +84,8 @@ if not selected_names:
     st.warning("Select at least one archetype to simulate.")
     st.stop()
 
-st.subheader("Population")
+st.subheader("All drivers")
+st.caption("When the fleet is plugged in, and its state of charge, pooled into a typical day.")
 with st.container(horizontal=True, vertical_alignment="bottom"):
     day_filter_label = (
         st.segmented_control("Days", list(DAY_FILTERS), default="All days") or "All days"
