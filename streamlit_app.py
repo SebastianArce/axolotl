@@ -1,13 +1,12 @@
 """Interactive dashboard for the EV driver behaviour simulator."""
 
-import polars as pl
 import streamlit as st
 
 from axolotl.aggregate import DayFilter, time_of_day_profile
 from axolotl.archetypes import ARCHETYPES, WEEKEND_TRIPPER, Archetype
-from axolotl.chart import build_population_chart
+from axolotl.chart import build_agent_chart, build_population_chart
 from axolotl.config import SimulationConfig
-from axolotl.engine import run_simulation
+from axolotl.engine import SimulationResult, run_simulation
 from axolotl.prices import get_price_profile
 
 ALL_ARCHETYPES: dict[str, Archetype] = {a.name: a for a in (*ARCHETYPES, WEEKEND_TRIPPER)}
@@ -24,25 +23,24 @@ def cached_prices(steps_per_day: int, use_live: bool) -> tuple[list[float], str]
     return profile.values_p_per_kwh, profile.source
 
 
-@st.cache_data(max_entries=32, show_spinner="Simulating the population…")
-def cached_profiles(
+# The full result (not just aggregates) is cached so the individual-driver
+# view can read any agent's trajectory without re-simulating; max_entries
+# bounds memory since each result holds the per-agent timestep arrays.
+@st.cache_data(max_entries=8, show_spinner="Simulating the population…")
+def cached_simulation(
     names: tuple[str, ...],
     n_agents: int,
     n_days: int,
     seed: int,
     spread: float,
     prices: tuple[float, ...],
-) -> dict[str, pl.DataFrame]:
+) -> SimulationResult:
     config = SimulationConfig(n_agents=n_agents, n_days=n_days, seed=seed, spread=spread)
-    result = run_simulation(
+    return run_simulation(
         config,
         archetypes=[ALL_ARCHETYPES[name] for name in names],
         price_profile=list(prices),
     )
-    return {
-        day_filter: time_of_day_profile(result, day_filter)
-        for day_filter in ("all", "weekday", "weekend")
-    }
 
 
 st.set_page_config(page_title="EV Driver Behaviour Simulator", page_icon="🔌", layout="wide")
@@ -92,10 +90,10 @@ if not selected_names:
 
 steps_per_day = SimulationConfig().steps_per_day
 price_values, price_source = cached_prices(steps_per_day, use_live_prices)
-profiles = cached_profiles(
+result = cached_simulation(
     tuple(selected_names), n_agents, weeks * 7, seed, spread, tuple(price_values)
 )
-profile = profiles[DAY_FILTERS[day_filter_label]]
+profile = time_of_day_profile(result, DAY_FILTERS[day_filter_label])
 
 st.plotly_chart(
     build_population_chart(
@@ -114,6 +112,46 @@ price_note = (
 st.caption(
     f"{n_agents:,} agents · {weeks} weeks at 30-minute resolution · "
     f"prices: {price_note} · smart chargers schedule into the cheapest slots."
+)
+
+st.subheader("Individual driver")
+st.caption("Pick one agent to inspect the behaviour the population view aggregates.")
+
+present_archetypes = sorted(
+    {agent.archetype.name for agent in result.agents},
+    key=[a.name for a in ALL_ARCHETYPES.values()].index,
+)
+max_days = result.config.n_days - result.config.burn_in_days
+with st.container(horizontal=True):
+    chosen_archetype = st.selectbox("Archetype", present_archetypes)
+    driver_indices = [
+        i for i, agent in enumerate(result.agents) if agent.archetype.name == chosen_archetype
+    ]
+    driver_number = int(
+        st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
+    )
+    days_shown = int(
+        st.slider("Days shown", min_value=2, max_value=max_days, value=min(7, max_days))
+    )
+
+agent_index = driver_indices[driver_number - 1]
+agent = result.agents[agent_index]
+st.plotly_chart(build_agent_chart(result, agent_index, days_shown), width="stretch")
+
+
+def fmt_hour(hour: float) -> str:
+    minutes = round(hour * 60)
+    return f"{minutes // 60 % 24:02d}:{minutes % 60:02d}"
+
+
+cadence = max(1, round(1 / agent.archetype.plug_in_frequency_per_day))
+weekend_times = f"{fmt_hour(agent.weekend_plug_in_hour)} / {fmt_hour(agent.weekend_plug_out_hour)}"
+st.caption(
+    f"Driver {driver_number} of {len(driver_indices)} ({chosen_archetype}): "
+    f"arrives home ~{fmt_hour(agent.plug_in_hour)}, leaves ~{fmt_hour(agent.plug_out_hour)} "
+    f"(weekends {weekend_times}) · "
+    f"~{agent.mean_daily_miles:.0f} miles/day · charges every "
+    f"{'day' if cadence == 1 else f'{cadence} days'} to a {agent.target_soc:.0%} target."
 )
 
 with st.expander("How the simulation works"):

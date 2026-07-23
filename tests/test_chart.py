@@ -1,10 +1,16 @@
+import pytest
 from plotly.graph_objects import Figure
 
 from axolotl.aggregate import time_of_day_profile
-from axolotl.chart import build_population_chart
+from axolotl.chart import build_agent_chart, build_population_chart
 from axolotl.config import SimulationConfig
-from axolotl.engine import run_simulation
+from axolotl.engine import SimulationResult, run_simulation
 from axolotl.prices import synthetic_price_profile
+
+
+@pytest.fixture(scope="module")
+def result() -> SimulationResult:
+    return run_simulation(SimulationConfig(n_agents=50, n_days=7))
 
 
 def make_profile():
@@ -27,6 +33,30 @@ def test_chart_without_prices_has_single_panel() -> None:
     profile, _ = make_profile()
     fig = build_population_chart(profile)
     assert all(trace.name is None or "price" not in trace.name.lower() for trace in fig.data)
+
+
+def test_agent_chart_shows_trajectory_and_plug_events(result: SimulationResult) -> None:
+    config = result.config
+    fig = build_agent_chart(result, agent_index=0, n_days=5)
+    names = [trace.name for trace in fig.data]
+    assert names == ["Plugged in", "State of charge", "Plug-in event"]
+
+    spd = config.steps_per_day
+    first = config.burn_in_days * spd
+    last = first + 5 * spd
+    expected_events = (
+        (result.plug_event_agent == 0)
+        & (result.plug_event_step >= first)
+        & (result.plug_event_step < last)
+    ).sum()
+    assert len(fig.data[2].x) == expected_events
+    assert len(fig.data[1].y) == 5 * spd
+
+
+def test_agent_chart_clamps_window_to_simulation(result: SimulationResult) -> None:
+    n_kept_days = result.config.n_days - result.config.burn_in_days
+    fig = build_agent_chart(result, agent_index=3, n_days=999)
+    assert len(fig.data[1].y) == n_kept_days * result.config.steps_per_day
 
 
 def test_chart_with_prices_adds_price_panel() -> None:
