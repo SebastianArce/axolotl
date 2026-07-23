@@ -17,6 +17,11 @@ DAY_FILTERS: dict[str, DayFilter] = {
 }
 
 
+def fmt_hour(hour: float) -> str:
+    minutes = round(hour * 60)
+    return f"{minutes // 60 % 24:02d}:{minutes % 60:02d}"
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def cached_prices(steps_per_day: int, use_live: bool) -> tuple[list[float], str]:
     profile = get_price_profile(steps_per_day, use_live=use_live)
@@ -85,75 +90,73 @@ if not selected_names:
     st.warning("Select at least one archetype to simulate.")
     st.stop()
 
-st.subheader("All drivers")
-st.caption("When the fleet is plugged in, and its state of charge, pooled into a typical day.")
-with st.container(horizontal=True, vertical_alignment="bottom"):
-    day_filter_label = (
-        st.segmented_control("Days", list(DAY_FILTERS), default="All days") or "All days"
-    )
-    show_prices = st.toggle("Show price panel", value=True)
-
 steps_per_day = SimulationConfig().steps_per_day
 price_values, price_source = cached_prices(steps_per_day, use_live_prices)
 result = cached_simulation(
     tuple(selected_names), n_agents, weeks * 7, seed, spread, tuple(price_values)
 )
-profile = time_of_day_profile(result, DAY_FILTERS[day_filter_label])
 
-st.plotly_chart(
-    build_population_chart(
-        profile,
-        price_values=price_values if show_prices else None,
-        price_source={"agile": "Octopus Agile", "synthetic": "synthetic"}[price_source],
-    ),
-    width="stretch",
-)
+with st.container(border=True):
+    st.subheader("All drivers")
+    st.caption("When the fleet is plugged in, and its state of charge, pooled into a typical day.")
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        day_filter_label = (
+            st.segmented_control("Days", list(DAY_FILTERS), default="All days") or "All days"
+        )
+        show_prices = st.toggle("Show price panel", value=True)
 
-price_note = (
-    "Octopus Agile, 28-day average by time of day"
-    if price_source == "agile"
-    else "synthetic profile (Agile API unreachable)"
-)
-st.caption(
-    f"{n_agents:,} agents · {weeks} weeks at 30-minute resolution · "
-    f"prices: {price_note} · smart chargers schedule into the cheapest slots."
-)
-
-st.subheader("Individual driver")
-st.caption("Pick one agent to inspect the behaviour the population view aggregates.")
-
-present_archetypes = sorted(
-    {agent.archetype.name for agent in result.agents},
-    key=[a.name for a in ALL_ARCHETYPES.values()].index,
-)
-with st.container(horizontal=True):
-    chosen_archetype = st.selectbox("Archetype", present_archetypes)
-    driver_indices = [
-        i for i, agent in enumerate(result.agents) if agent.archetype.name == chosen_archetype
-    ]
-    driver_number = int(
-        st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
+    profile = time_of_day_profile(result, DAY_FILTERS[day_filter_label])
+    st.plotly_chart(
+        build_population_chart(
+            profile,
+            price_values=price_values if show_prices else None,
+            price_source={"agile": "Octopus Agile", "synthetic": "synthetic"}[price_source],
+        ),
+        width="stretch",
     )
 
-agent_index = driver_indices[driver_number - 1]
-agent = result.agents[agent_index]
-st.plotly_chart(build_agent_chart(result, agent_index), width="stretch")
+    price_note = (
+        "Octopus Agile, 28-day average by time of day"
+        if price_source == "agile"
+        else "synthetic profile (Agile API unreachable)"
+    )
+    st.caption(
+        f"{n_agents:,} agents · {weeks} weeks at 30-minute resolution · "
+        f"prices: {price_note} · smart chargers schedule into the cheapest slots."
+    )
 
+with st.container(border=True):
+    st.subheader("Individual driver")
+    st.caption("Pick one agent to inspect the behaviour the population view aggregates.")
 
-def fmt_hour(hour: float) -> str:
-    minutes = round(hour * 60)
-    return f"{minutes // 60 % 24:02d}:{minutes % 60:02d}"
+    present_archetypes = sorted(
+        {agent.archetype.name for agent in result.agents},
+        key=[a.name for a in ALL_ARCHETYPES.values()].index,
+    )
+    with st.container(horizontal=True):
+        chosen_archetype = st.selectbox("Archetype", present_archetypes)
+        driver_indices = [
+            i for i, agent in enumerate(result.agents) if agent.archetype.name == chosen_archetype
+        ]
+        driver_number = int(
+            st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
+        )
 
+    agent_index = driver_indices[driver_number - 1]
+    agent = result.agents[agent_index]
+    st.plotly_chart(build_agent_chart(result, agent_index), width="stretch")
 
-cadence = max(1, round(1 / agent.archetype.plug_in_frequency_per_day))
-weekend_times = f"{fmt_hour(agent.weekend_plug_in_hour)} / {fmt_hour(agent.weekend_plug_out_hour)}"
-st.caption(
-    f"Driver {driver_number} of {len(driver_indices)} ({chosen_archetype}): "
-    f"arrives home ~{fmt_hour(agent.plug_in_hour)}, leaves ~{fmt_hour(agent.plug_out_hour)} "
-    f"(weekends {weekend_times}) · "
-    f"~{agent.mean_daily_miles:.0f} miles/day · charges every "
-    f"{'day' if cadence == 1 else f'{cadence} days'} to a {agent.target_soc:.0%} target."
-)
+    cadence = max(1, round(1 / agent.archetype.plug_in_frequency_per_day))
+    weekend_times = (
+        f"{fmt_hour(agent.weekend_plug_in_hour)} / {fmt_hour(agent.weekend_plug_out_hour)}"
+    )
+    st.caption(
+        f"Driver {driver_number} of {len(driver_indices)} ({chosen_archetype}): "
+        f"arrives home ~{fmt_hour(agent.plug_in_hour)}, leaves ~{fmt_hour(agent.plug_out_hour)} "
+        f"(weekends {weekend_times}) · "
+        f"~{agent.mean_daily_miles:.0f} miles/day · charges every "
+        f"{'day' if cadence == 1 else f'{cadence} days'} to a {agent.target_soc:.0%} target."
+    )
 
 with st.expander("How the simulation works"):
     st.markdown(
