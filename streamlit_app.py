@@ -46,7 +46,8 @@ def cached_simulation(
 st.set_page_config(page_title="EV Driver Behaviour Simulator", page_icon="🔌", layout="wide")
 
 with st.sidebar:
-    st.header("Population")
+    st.header("Simulation inputs")
+    st.subheader("Drivers")
     selected_names = st.multiselect(
         "Archetypes",
         options=list(ALL_ARCHETYPES),
@@ -66,7 +67,7 @@ with st.sidebar:
     )
     seed = int(st.number_input("Random seed", min_value=0, value=42, step=1))
 
-    st.header("Prices")
+    st.subheader("Prices")
     use_live_prices = st.toggle(
         "Live Octopus Agile prices",
         value=True,
