@@ -17,7 +17,9 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 # Runtime stage: no uv, no build caches, non-root user.
 FROM python:3.14-slim-bookworm
 
-RUN groupadd -r app && useradd -r -g app app
+# -m: streamlit writes per-user state under ~/.streamlit at session setup,
+# and a failure there also stops the theme reaching the browser.
+RUN groupadd -r app && useradd -r -m -g app app
 
 COPY --from=builder --chown=app:app /app /app
 
