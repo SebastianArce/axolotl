@@ -12,10 +12,10 @@ aggregates are built from. The same price panel sits below with each
 displayed day's actual prices, so both views read the same way.
 
 Design notes: the bars are deliberately translucent so the state-of-charge
-story reads first; the one direct label (the cheapest slot) is sparse by
-intent and everything else lives in the unified hover and the legend. The
-shaded window spanning both panels marks the priciest contiguous hours of the
-day — the grid peak flexible charging exists to avoid.
+story reads first; direct labels are sparse by intent and everything else
+lives in the unified hover and the legend. The shaded window spanning both
+panels marks the priciest contiguous hours of the day — the grid peak
+flexible charging exists to avoid.
 """
 
 from datetime import datetime, timedelta
@@ -82,7 +82,6 @@ def build_population_chart(
     _add_soc_layers(fig, centers, profile)
     if with_prices:
         _add_price_panel(fig, hours, price_values, price_source, price_band)
-        _annotate_cheapest_slot(fig, centers, price_values)
     _style(fig, with_prices)
     return fig
 
@@ -259,22 +258,6 @@ def _add_price_panel(
             legendrank=5,
             hovertemplate="%{y:.1f} p/kWh<extra>Price</extra>",
         )
-    )
-
-
-def _annotate_cheapest_slot(fig: Figure, centers: list[float], price_values: list[float]) -> None:
-    """The one direct label: where charging is cheapest."""
-    cheapest_idx = min(range(len(price_values)), key=price_values.__getitem__)
-    fig.add_annotation(
-        x=centers[cheapest_idx],
-        y=price_values[cheapest_idx],
-        xref="x",
-        yref="y2",
-        text=f"cheapest: {price_values[cheapest_idx]:.1f}p",
-        showarrow=False,
-        font={**ANNOTATION_FONT, "size": 11},
-        yanchor="bottom",
-        yshift=6,
     )
 
 
