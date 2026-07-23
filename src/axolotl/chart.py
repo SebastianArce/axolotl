@@ -442,10 +442,10 @@ def build_agent_chart(
                 "bordercolor": GRIDLINE,
                 "borderwidth": 1,
             },
-            # Hour labels when zoomed in, day names when zoomed out — the
-            # anchor date is arbitrary and never shown.
+            # Two-line hour + day-name labels when zoomed in, day names alone
+            # when zoomed out — the anchor date is arbitrary and never shown.
             "tickformatstops": [
-                {"dtickrange": [None, 86_400_000], "value": "%H:%M"},
+                {"dtickrange": [None, 86_400_000], "value": "%H:%M<br>%a"},
                 {"dtickrange": [86_400_000, None], "value": "%a"},
             ],
             "hoverformat": "%a %H:%M",
