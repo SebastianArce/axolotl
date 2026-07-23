@@ -60,24 +60,18 @@ def test_agent_chart_defaults_to_full_run_after_burn_in(result: SimulationResult
     assert len(build_agent_chart(result, agent_index=3, n_days=999).data[1].y) == expected_steps
 
 
-def test_agent_chart_opens_on_one_day_with_range_picker(result: SimulationResult) -> None:
+def test_agent_chart_view_window_anchors_at_data_start(result: SimulationResult) -> None:
     fig = build_agent_chart(result, agent_index=0)
     x0, x1 = fig.layout.xaxis.range
-    assert (x1 - x0).days == 1
+    assert x0 == fig.data[1].x[0]
+    assert (x1 - x0).days == 1  # default view: one day
     assert fig.layout.xaxis.rangeslider.visible
-    # The 7-day fixture keeps 5 days after burn-in, so 1w/2w would duplicate All.
-    assert [button.label for button in fig.layout.updatemenus[0].buttons] == ["1d", "3d", "All"]
+    assert len(fig.layout.updatemenus) == 0  # the window choice lives in the app
 
-
-def test_agent_chart_range_buttons_stay_within_the_data(result: SimulationResult) -> None:
-    fig = build_agent_chart(result, agent_index=0)
-    data_start = fig.data[1].x[0]
-    step = fig.data[1].x[1] - data_start
-    data_end = fig.data[1].x[-1] + step
-    for button in fig.layout.updatemenus[0].buttons:
-        range_start, range_end = button.args[0]["xaxis.range"]
-        assert range_start == data_start
-        assert range_end <= data_end
+    n_kept_days = result.config.n_days - result.config.burn_in_days
+    for view_days, expected_days in ((3, 3), (999, n_kept_days), (None, n_kept_days)):
+        x0, x1 = build_agent_chart(result, agent_index=0, view_days=view_days).layout.xaxis.range
+        assert (x1 - x0).days == expected_days
 
 
 def test_agent_chart_with_price_profile_tiles_it(result: SimulationResult) -> None:

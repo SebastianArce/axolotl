@@ -299,17 +299,22 @@ def build_agent_chart(
     n_days: int | None = None,
     price_values: list[float] | None = None,
     price_source: str | None = None,
+    view_days: int | None = 1,
 ) -> Figure:
     """One driver's SoC trajectory and plug-in sessions over consecutive days.
 
     Spans the whole simulation after burn-in by default (`n_days` limits it),
     so the full behaviour — charging cadence, weekday/weekend rhythm — is
-    visible at once; zoom in for detail. Plugged-in periods are shaded in the
-    population chart's blue; each plug-in event is marked at the SoC it
-    happened, since "SoC at plug-in" is a headline output of the simulator.
-    When `price_values` is given — a full day-by-day series (one per simulated
-    timestep) or a single-day profile (tiled) — the population chart's price
-    panel is added below, showing each displayed day's prices.
+    visible at once. `view_days` sets the visible window from the data start
+    (None shows everything); the range slider reaches the rest. The window
+    choice is a parameter rather than in-chart buttons so the caller can keep
+    it stable across rebuilds — a rebuilt figure resets in-chart UI state.
+    Plugged-in periods are shaded in the population chart's blue; each plug-in
+    event is marked at the SoC it happened, since "SoC at plug-in" is a
+    headline output of the simulator. When `price_values` is given — a full
+    day-by-day series (one per simulated timestep) or a single-day profile
+    (tiled) — the population chart's price panel is added below, showing each
+    displayed day's prices.
     """
     config = result.config
     spd = config.steps_per_day
@@ -399,30 +404,11 @@ def build_agent_chart(
         window = _window_prices(price_values, first, last, spd)
         _add_agent_price_panel(fig, times, step_hours, window, price_source)
 
-    # Range buttons jump to spans anchored at the start of the data. Plotly's
-    # built-in rangeselector steps backward from the current view's end, so on
-    # the first day "1w" would reach six days before the data and show an
-    # almost-empty chart. Spans that wouldn't differ from "All" are dropped.
     total_days = (last - first) // spd
-    range_buttons = [
-        {
-            "label": label,
-            "method": "relayout",
-            "args": [{"xaxis.range": [base, base + timedelta(days=days)]}],
-        }
-        for days, label in ((1, "1d"), (3, "3d"), (7, "1w"), (14, "2w"))
-        if days < total_days
-    ]
-    range_buttons.append(
-        {"label": "All", "method": "relayout", "args": [{"xaxis.range": [base, window_end]}]}
-    )
+    visible_days = total_days if view_days is None else min(view_days, total_days)
 
     fig.update_layout(
         template="none",
-        # A constant uirevision preserves the viewer's zoom/pan when the
-        # figure is rebuilt for a different driver; the one-day opening
-        # range below only applies on first render.
-        uirevision="agent-chart",
         height=540 if with_prices else 420,
         paper_bgcolor=SURFACE,
         plot_bgcolor=SURFACE,
@@ -445,25 +431,9 @@ def build_agent_chart(
             "font": {"size": 12, "color": INK_SECONDARY},
         },
         margin={"l": 56, "r": 36, "t": 56, "b": 24},
-        updatemenus=[
-            {
-                "type": "buttons",
-                "direction": "right",
-                "buttons": range_buttons,
-                "x": 0,
-                "xanchor": "left",
-                "y": 1.06,
-                "yanchor": "bottom",
-                "showactive": True,
-                "bgcolor": SURFACE,
-                "bordercolor": GRIDLINE,
-                "borderwidth": 1,
-                "font": {"size": 11, "color": INK_SECONDARY},
-            }
-        ],
         xaxis={
-            # Open on a single day; the range buttons and slider reach the rest.
-            "range": [base, base + timedelta(days=1)],
+            # Open on the caller's view window; the slider reaches the rest.
+            "range": [base, base + timedelta(days=visible_days)],
             "rangeslider": {
                 "visible": True,
                 "thickness": 0.09,

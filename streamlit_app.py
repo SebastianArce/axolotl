@@ -15,6 +15,7 @@ DAY_FILTERS: dict[str, DayFilter] = {
     "Weekdays": "weekday",
     "Weekends": "weekend",
 }
+VIEW_WINDOWS: dict[str, int | None] = {"1d": 1, "3d": 3, "1w": 7, "2w": 14, "All": None}
 
 
 def fmt_hour(hour: float) -> str:
@@ -151,18 +152,22 @@ with st.container(border=True):
         driver_number = int(
             st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
         )
+        # Widget state survives reruns, so the chosen window sticks when
+        # switching driver (a rebuilt figure would reset in-chart buttons).
+        view_label = (
+            st.segmented_control("View", list(VIEW_WINDOWS), default="1d", key="agent_view") or "1d"
+        )
         show_agent_prices = st.toggle("Show price panel", value=True, key="agent_prices")
 
     agent_index = driver_indices[driver_number - 1]
     agent = result.agents[agent_index]
-    # The stable key lets the chart update in place, so uirevision can keep
-    # the viewer's zoom when switching driver.
     st.plotly_chart(
         build_agent_chart(
             result,
             agent_index,
             price_values=price_values if show_agent_prices else None,
             price_source=price_label,
+            view_days=VIEW_WINDOWS[view_label],
         ),
         width="stretch",
         key="agent_chart",
