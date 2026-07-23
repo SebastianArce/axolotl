@@ -80,7 +80,7 @@ def test_agent_chart_range_buttons_stay_within_the_data(result: SimulationResult
         assert range_end <= data_end
 
 
-def test_agent_chart_with_prices_adds_price_panel(result: SimulationResult) -> None:
+def test_agent_chart_with_price_profile_tiles_it(result: SimulationResult) -> None:
     spd = result.config.steps_per_day
     fig = build_agent_chart(
         result,
@@ -94,6 +94,32 @@ def test_agent_chart_with_prices_adds_price_panel(result: SimulationResult) -> N
     # Tiled across every displayed step, plus the closing point at the window end.
     n_kept_steps = (result.config.n_days - result.config.burn_in_days) * spd
     assert len(price_traces[0].y) == n_kept_steps + 1
+
+
+def test_agent_chart_with_price_series_shows_each_days_prices(
+    result: SimulationResult,
+) -> None:
+    config = result.config
+    series = [float(step) for step in range(config.n_steps)]
+    fig = build_agent_chart(result, agent_index=0, price_values=series, price_source="synthetic")
+    price_trace = next(t for t in fig.data if t.name and "price" in t.name.lower())
+    # The panel shows the post-burn-in slice of the series, not a tiled day.
+    first = config.burn_in_days * config.steps_per_day
+    assert list(price_trace.y) == [*series[first:], series[-1]]
+
+
+def test_population_chart_price_band_draws_a_wash() -> None:
+    profile, steps_per_day = make_profile()
+    mean = synthetic_price_profile(steps_per_day)
+    fig = build_population_chart(
+        profile,
+        price_values=mean,
+        price_source="synthetic",
+        price_band=([p - 1 for p in mean], [p + 1 for p in mean]),
+    )
+    band_traces = [t for t in fig.data if t.name == "Price 10–90th pct"]
+    assert len(band_traces) == 1
+    assert band_traces[0].yaxis == "y2"
 
 
 def test_chart_with_prices_adds_price_panel() -> None:

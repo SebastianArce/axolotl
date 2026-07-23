@@ -106,8 +106,16 @@ def run_simulation(
     """Simulate a population of EV drivers and record plug-in state and SoC."""
     steps_per_day = config.steps_per_day
     prices = price_profile if price_profile is not None else synthetic_price_profile(steps_per_day)
-    if len(prices) != steps_per_day:
-        raise ValueError(f"price_profile must have {steps_per_day} entries, got {len(prices)}")
+    # A single-day profile is tiled across the horizon; a full day-by-day
+    # series (e.g. real Agile data) is used as-is, so smart charging responds
+    # to each day's actual prices.
+    if len(prices) == steps_per_day:
+        prices = list(prices) * config.n_days
+    elif len(prices) != config.n_steps:
+        raise ValueError(
+            f"price_profile must have {steps_per_day} (one day) or "
+            f"{config.n_steps} (full horizon) entries, got {len(prices)}"
+        )
 
     rng = np.random.default_rng(config.seed)
     agents = sample_population(
@@ -225,8 +233,10 @@ def _smart_schedule(
         _next_occurrence(departure_step, plug_step, steps_per_day),
     )
 
-    candidates = range(plug_step, deadline)
-    cheapest = sorted(candidates, key=lambda s: (prices[s % steps_per_day], s))
+    # A final-evening plug-in has a deadline past the simulated horizon;
+    # steps beyond it are never lived through, so they can't be scheduled.
+    candidates = range(plug_step, min(deadline, len(prices)))
+    cheapest = sorted(candidates, key=lambda s: (prices[s], s))
     return set(cheapest[:steps_needed])
 
 

@@ -1,28 +1,31 @@
-"""Electricity price profiles used by the SMART charging strategy.
+"""Electricity prices used by the SMART charging strategy.
 
 Two sources:
 
 - Octopus Agile: real half-hourly prices from the public Octopus Energy API,
-  averaged over a recent window into a typical time-of-day profile. Agile
-  follows day-ahead wholesale prices, so this is the natural signal for
-  Intelligent Octopus-style smart charging.
+  taken day by day over a recent Monday-aligned window so simulated weekdays
+  and weekends line up with real ones. Agile follows day-ahead wholesale
+  prices, so this is the natural signal for Intelligent Octopus-style smart
+  charging — and its day-to-day volatility is what makes the scheduling
+  visibly adaptive.
 - Synthetic fallback: a deterministic GB-shaped profile (evening peak, cheap
-  23:30-05:30 overnight window per the CNZ report) used when the API is
-  unavailable, and by tests that need reproducibility without network access.
+  23:30-05:30 overnight window per the CNZ report), identical every day, used
+  when the API is unavailable and by tests that need reproducibility without
+  network access.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 import httpx
+import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 AGILE_PRODUCT = "AGILE-24-10-01"
 # Region C = London. Regional Agile prices differ by a roughly constant offset,
 # so the *shape* — which is all smart scheduling cares about — is unaffected.
 AGILE_REGION = "C"
-AGILE_LOOKBACK_DAYS = 28
 LOCAL_TZ = ZoneInfo("Europe/London")
 HALF_HOURS_PER_DAY = 48
 
@@ -36,13 +39,19 @@ DAY_PRICE_P_PER_KWH = 25.0
 PEAK_PRICE_P_PER_KWH = 35.0
 
 
-class PriceProfile(BaseModel):
-    """A per-timestep-of-day price profile and where it came from."""
+class PriceSeries(BaseModel):
+    """A sequential per-timestep price series covering whole days.
+
+    `start_date` is the real Monday the window begins on for Agile data, and
+    None for the synthetic profile (the simulation itself is dateless).
+    """
 
     model_config = ConfigDict(frozen=True)
 
     values_p_per_kwh: list[float]
     source: Literal["agile", "synthetic"]
+    steps_per_day: int
+    start_date: date | None = None
 
 
 def synthetic_price_profile(steps_per_day: int) -> list[float]:
@@ -59,42 +68,109 @@ def synthetic_price_profile(steps_per_day: int) -> list[float]:
     return prices
 
 
-def get_price_profile(steps_per_day: int, use_live: bool = True) -> PriceProfile:
-    """Agile-based profile when the API is reachable, synthetic otherwise."""
+def synthetic_price_series(steps_per_day: int, n_days: int) -> list[float]:
+    """The synthetic day repeated: deliberately flat day-to-day, so offline
+    runs and calibration tests stay deterministic."""
+    return synthetic_price_profile(steps_per_day) * n_days
+
+
+def get_price_series(steps_per_day: int, n_days: int, use_live: bool = True) -> PriceSeries:
+    """Day-by-day Agile series when the API is reachable, synthetic otherwise."""
     if use_live:
+        today = datetime.now(tz=LOCAL_TZ).date()
+        start = monday_aligned_start(n_days, today)
         try:
-            return PriceProfile(
-                values_p_per_kwh=_resample(fetch_agile_profile(), steps_per_day),
+            half_hourly = fetch_agile_series(start, n_days)
+            return PriceSeries(
+                values_p_per_kwh=_resample_series(half_hourly, steps_per_day),
                 source="agile",
+                steps_per_day=steps_per_day,
+                start_date=start,
             )
         except (httpx.HTTPError, ValueError):
             pass
-    return PriceProfile(values_p_per_kwh=synthetic_price_profile(steps_per_day), source="synthetic")
+    return PriceSeries(
+        values_p_per_kwh=synthetic_price_series(steps_per_day, n_days),
+        source="synthetic",
+        steps_per_day=steps_per_day,
+    )
 
 
-def fetch_agile_profile(
-    client: httpx.Client | None = None,
-    lookback_days: int = AGILE_LOOKBACK_DAYS,
-) -> list[float]:
-    """Average recent Agile half-hourly rates into a 48-slot time-of-day profile.
+def monday_aligned_start(n_days: int, today: date) -> date:
+    """Start of the most recent Monday-aligned `n_days` window fully in the past.
 
-    Rates come back in UTC; slots are bucketed in Europe/London local time so
-    the overnight-cheap shape lines up with the simulation's local-time day.
+    Rolling the anchor back to its Monday keeps the window's end on or before
+    today (only fully published days are used) and lines simulated day 0 — a
+    Monday — up with a real Monday, so weekend price shapes match.
     """
-    period_to = datetime.now(tz=UTC).replace(minute=0, second=0, microsecond=0)
-    period_from = period_to - timedelta(days=lookback_days)
+    anchor = today - timedelta(days=n_days)
+    return anchor - timedelta(days=anchor.weekday())
 
-    sums = [0.0] * HALF_HOURS_PER_DAY
-    counts = [0] * HALF_HOURS_PER_DAY
+
+def fetch_agile_series(
+    start: date,
+    n_days: int,
+    client: httpx.Client | None = None,
+) -> list[float]:
+    """Sequential half-hourly Agile rates for `n_days` starting at `start`.
+
+    Rates come back in UTC and are bucketed by (local date, half-hour slot) in
+    Europe/London. The simulation's day is an idealized 48-slot local day, so
+    DST days are normalized: the autumn clock change's doubled 01:xx slots
+    average into one bucket, and the spring change's missing slots are filled
+    from the same slot on the nearest day that has one.
+    """
+    # ±1 day of UTC margin so local-time bucketing sees the window's edges.
+    period_from = datetime.combine(start, datetime.min.time(), tzinfo=UTC) - timedelta(days=1)
+    period_to = period_from + timedelta(days=n_days + 2)
+
+    sums = [[0.0] * HALF_HOURS_PER_DAY for _ in range(n_days)]
+    counts = [[0] * HALF_HOURS_PER_DAY for _ in range(n_days)]
     for valid_from, price in _fetch_agile_rates(period_from, period_to, client):
         local = valid_from.astimezone(LOCAL_TZ)
-        slot = local.hour * 2 + local.minute // 30
-        sums[slot] += price
-        counts[slot] += 1
+        day = (local.date() - start).days
+        if 0 <= day < n_days:
+            slot = local.hour * 2 + local.minute // 30
+            sums[day][slot] += price
+            counts[day][slot] += 1
 
-    if any(count == 0 for count in counts):
-        raise ValueError("Agile API returned incomplete time-of-day coverage")
-    return [total / count for total, count in zip(sums, counts, strict=True)]
+    series = [
+        [total / count if count else None for total, count in zip(s, c, strict=True)]
+        for s, c in zip(sums, counts, strict=True)
+    ]
+    return _fill_missing_slots(series)
+
+
+def _fill_missing_slots(series: list[list[float | None]]) -> list[float]:
+    """Fill each empty slot from the same slot on the nearest day that has one."""
+    n_days = len(series)
+    filled: list[float] = []
+    for day, day_prices in enumerate(series):
+        for slot, price in enumerate(day_prices):
+            if price is None:
+                for offset in range(1, n_days):
+                    for other in (day - offset, day + offset):
+                        if 0 <= other < n_days and series[other][slot] is not None:
+                            price = series[other][slot]
+                            break
+                    if price is not None:
+                        break
+            if price is None:
+                raise ValueError("Agile API returned incomplete time-of-day coverage")
+            filled.append(price)
+    return filled
+
+
+def price_time_of_day_stats(
+    values: list[float], steps_per_day: int
+) -> tuple[list[float], list[float], list[float]]:
+    """Per-slot (mean, 10th, 90th percentile) across the days of a series."""
+    by_day = np.asarray(values).reshape(-1, steps_per_day)
+    return (
+        by_day.mean(axis=0).tolist(),
+        np.percentile(by_day, 10, axis=0).tolist(),
+        np.percentile(by_day, 90, axis=0).tolist(),
+    )
 
 
 def _fetch_agile_rates(
@@ -135,6 +211,16 @@ def _fetch_agile_rates(
         if owns_client:
             client.close()
     return rates
+
+
+def _resample_series(half_hourly: list[float], steps_per_day: int) -> list[float]:
+    """Resample each 48-slot day block of a sequential series."""
+    resampled: list[float] = []
+    for day_start in range(0, len(half_hourly), HALF_HOURS_PER_DAY):
+        resampled.extend(
+            _resample(half_hourly[day_start : day_start + HALF_HOURS_PER_DAY], steps_per_day)
+        )
+    return resampled
 
 
 def _resample(half_hourly: list[float], steps_per_day: int) -> list[float]:
