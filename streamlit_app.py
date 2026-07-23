@@ -92,6 +92,7 @@ if not selected_names:
 
 steps_per_day = SimulationConfig().steps_per_day
 price_values, price_source = cached_prices(steps_per_day, use_live_prices)
+price_label = {"agile": "Octopus Agile", "synthetic": "synthetic"}[price_source]
 result = cached_simulation(
     tuple(selected_names), n_agents, weeks * 7, seed, spread, tuple(price_values)
 )
@@ -110,7 +111,7 @@ with st.container(border=True):
         build_population_chart(
             profile,
             price_values=price_values if show_prices else None,
-            price_source={"agile": "Octopus Agile", "synthetic": "synthetic"}[price_source],
+            price_source=price_label,
         ),
         width="stretch",
     )
@@ -133,7 +134,7 @@ with st.container(border=True):
         {agent.archetype.name for agent in result.agents},
         key=[a.name for a in ALL_ARCHETYPES.values()].index,
     )
-    with st.container(horizontal=True):
+    with st.container(horizontal=True, vertical_alignment="bottom"):
         chosen_archetype = st.selectbox("Archetype", present_archetypes)
         driver_indices = [
             i for i, agent in enumerate(result.agents) if agent.archetype.name == chosen_archetype
@@ -141,10 +142,19 @@ with st.container(border=True):
         driver_number = int(
             st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
         )
+        show_agent_prices = st.toggle("Show price panel", value=True, key="agent_prices")
 
     agent_index = driver_indices[driver_number - 1]
     agent = result.agents[agent_index]
-    st.plotly_chart(build_agent_chart(result, agent_index), width="stretch")
+    st.plotly_chart(
+        build_agent_chart(
+            result,
+            agent_index,
+            price_values=price_values if show_agent_prices else None,
+            price_source=price_label,
+        ),
+        width="stretch",
+    )
 
     cadence = max(1, round(1 / agent.archetype.plug_in_frequency_per_day))
     weekend_times = (

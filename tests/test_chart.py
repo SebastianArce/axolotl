@@ -74,6 +74,22 @@ def test_agent_chart_opens_on_one_day_with_range_picker(result: SimulationResult
     ]
 
 
+def test_agent_chart_with_prices_adds_price_panel(result: SimulationResult) -> None:
+    spd = result.config.steps_per_day
+    fig = build_agent_chart(
+        result,
+        agent_index=0,
+        price_values=synthetic_price_profile(spd),
+        price_source="synthetic",
+    )
+    price_traces = [t for t in fig.data if t.name and "price" in t.name.lower()]
+    assert len(price_traces) == 1
+    assert price_traces[0].yaxis == "y2"
+    # Tiled across every displayed step, plus the closing point at the window end.
+    n_kept_steps = (result.config.n_days - result.config.burn_in_days) * spd
+    assert len(price_traces[0].y) == n_kept_steps + 1
+
+
 def test_chart_with_prices_adds_price_panel() -> None:
     profile, steps_per_day = make_profile()
     fig = build_population_chart(

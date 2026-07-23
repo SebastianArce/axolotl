@@ -53,7 +53,9 @@ distribution, and an aligned electricity-price panel with the priciest hours of
 the day shaded. The individual-driver chart shows any single agent's SoC
 trajectory and plug-in sessions across consecutive days — the agent-level
 output the population aggregates are built from, and a direct way to
-sanity-check behaviour one driver at a time.
+sanity-check behaviour one driver at a time. Both views share the same
+aligned price panel, so smart charging can be read against price at either
+level.
 
 ## Design decisions
 
@@ -127,7 +129,7 @@ charge taper near full; seasonal efficiency; an HTTP API over the core package.
 
 ```sh
 uv sync                  # install (Python 3.13+)
-uv run pytest            # 54 tests
+uv run pytest            # 58 tests
 uv run ruff check .      # lint
 uv run ruff format .     # format
 uv run ty check          # type check

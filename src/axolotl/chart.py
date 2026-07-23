@@ -8,7 +8,8 @@ their own slim panel below, aligned on the same time axis.
 Agent chart: one driver's actual state-of-charge trajectory over consecutive
 simulated days, with plugged-in periods shaded and each plug-in event marked
 at the SoC it happened — the individual-level output the population
-aggregates are built from.
+aggregates are built from. The same price panel sits below, tiled across the
+displayed days, so both views read the same way.
 
 Design notes: the bars are deliberately translucent so the state-of-charge
 story reads first; the one direct label (the cheapest slot) is sparse by
@@ -302,7 +303,11 @@ def _style(fig: Figure, with_prices: bool) -> None:
 
 
 def build_agent_chart(
-    result: SimulationResult, agent_index: int, n_days: int | None = None
+    result: SimulationResult,
+    agent_index: int,
+    n_days: int | None = None,
+    price_values: list[float] | None = None,
+    price_source: str | None = None,
 ) -> Figure:
     """One driver's SoC trajectory and plug-in sessions over consecutive days.
 
@@ -311,6 +316,8 @@ def build_agent_chart(
     visible at once; zoom in for detail. Plugged-in periods are shaded in the
     population chart's blue; each plug-in event is marked at the SoC it
     happened, since "SoC at plug-in" is a headline output of the simulator.
+    When `price_values` is given (one per timestep of the day), the population
+    chart's price panel is added below, tiled across the displayed days.
     """
     config = result.config
     spd = config.steps_per_day
@@ -395,13 +402,20 @@ def build_agent_chart(
         yshift=2,
     )
 
+    with_prices = price_values is not None
+    if with_prices:
+        _add_agent_peak_windows(fig, base, (last - first) // spd, price_values)
+        _add_agent_price_panel(fig, times, step_hours, price_values, price_source)
+
     fig.update_layout(
         template="none",
-        height=420,
+        height=540 if with_prices else 420,
         paper_bgcolor=SURFACE,
         plot_bgcolor=SURFACE,
         font={"family": FONT_FAMILY, "color": INK_PRIMARY, "size": 13},
         hovermode="x unified",
+        # One hover label spanning every panel on the shared x-axis.
+        hoversubplots="axis",
         hoverlabel={
             "bgcolor": SURFACE,
             "bordercolor": GRIDLINE,
@@ -458,8 +472,10 @@ def build_agent_chart(
             "ticks": "outside",
             "tickcolor": BASELINE,
             "tickfont": {"color": INK_MUTED, "size": 12},
+            "anchor": "y2" if with_prices else "y",
         },
         yaxis={
+            "domain": [0.32, 1.0] if with_prices else [0.0, 1.0],
             "range": [0, 101],
             "ticksuffix": "%",
             "gridcolor": GRIDLINE,
@@ -467,4 +483,74 @@ def build_agent_chart(
             "tickfont": {"color": INK_MUTED, "size": 12},
         },
     )
+    if with_prices:
+        fig.update_layout(
+            yaxis2={
+                "domain": [0.0, 0.24],
+                "title": {"text": "p/kWh", "font": {"color": INK_MUTED, "size": 12}},
+                "rangemode": "tozero",
+                "gridcolor": GRIDLINE,
+                "zeroline": False,
+                "tickfont": {"color": INK_MUTED, "size": 12},
+                "anchor": "x",
+            }
+        )
     return fig
+
+
+def _add_agent_peak_windows(
+    fig: Figure, base: datetime, n_days: int, price_values: list[float]
+) -> None:
+    """Shade the priciest hours of each displayed day across both panels."""
+    peak_start, peak_end = _priciest_window(price_values)
+    for day in range(n_days):
+        for yref in ("y domain", "y2 domain"):
+            fig.add_shape(
+                type="rect",
+                x0=base + timedelta(days=day, hours=peak_start),
+                x1=base + timedelta(days=day, hours=peak_end),
+                y0=0,
+                y1=1,
+                xref="x",
+                yref=yref,
+                fillcolor=PEAK_WASH,
+                line_width=0,
+                layer="below",
+            )
+    # One sparse label on the opening day; the shading repeats daily.
+    fig.add_annotation(
+        x=base + timedelta(hours=(peak_start + peak_end) / 2),
+        y=99,
+        text=f"priciest {PEAK_WINDOW_HOURS} hours",
+        showarrow=False,
+        font={**ANNOTATION_FONT, "size": 11, "color": INK_MUTED},
+        yanchor="top",
+    )
+
+
+def _add_agent_price_panel(
+    fig: Figure,
+    times: list[datetime],
+    step_hours: float,
+    price_values: list[float],
+    price_source: str | None,
+) -> None:
+    """The population chart's price panel, tiled across the displayed days."""
+    spd = len(price_values)
+    tiled = [price_values[i % spd] for i in range(len(times))]
+    # Repeat the last value one step past the window so the step line spans
+    # the same x extent as the SoC panel.
+    fig.add_trace(
+        Scatter(
+            x=[*times, times[-1] + timedelta(hours=step_hours)],
+            y=[*tiled, tiled[-1]],
+            yaxis="y2",
+            mode="lines",
+            line={"width": 2, "color": PRICE_COLOR, "shape": "hv"},
+            fill="tozeroy",
+            fillcolor=PRICE_FILL,
+            name=f"Electricity price ({price_source or 'profile'})",
+            legendrank=4,
+            hovertemplate="%{y:.1f} p/kWh<extra>Price</extra>",
+        )
+    )
