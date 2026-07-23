@@ -66,17 +66,13 @@ with st.sidebar:
     )
     seed = int(st.number_input("Random seed", min_value=0, value=42, step=1))
 
-    st.header("View")
-    day_filter_label = (
-        st.segmented_control("Days", list(DAY_FILTERS), default="All days") or "All days"
-    )
+    st.header("Prices")
     use_live_prices = st.toggle(
         "Live Octopus Agile prices",
         value=True,
-        help="28-day average by time of day. Falls back to a synthetic "
-        "profile when the API is unreachable.",
+        help="28-day average by time of day, used by smart charging. Falls back "
+        "to a synthetic profile when the API is unreachable.",
     )
-    show_prices = st.toggle("Show price panel", value=True)
 
 st.title("EV driver behaviour")
 st.caption(
@@ -87,6 +83,13 @@ st.caption(
 if not selected_names:
     st.warning("Select at least one archetype to simulate.")
     st.stop()
+
+st.subheader("Population")
+with st.container(horizontal=True, vertical_alignment="bottom"):
+    day_filter_label = (
+        st.segmented_control("Days", list(DAY_FILTERS), default="All days") or "All days"
+    )
+    show_prices = st.toggle("Show price panel", value=True)
 
 steps_per_day = SimulationConfig().steps_per_day
 price_values, price_source = cached_prices(steps_per_day, use_live_prices)
