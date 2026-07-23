@@ -60,7 +60,11 @@ def build_population_chart(
     """
     hours = profile["hour"].to_list()
     step = hours[1] - hours[0] if len(hours) > 1 else 0.5
-    centers = [h + step / 2 for h in hours]
+    # A dateless datetime axis (like the agent chart's) so the unified hover
+    # header names the slot ("18:00") instead of a raw fraction ("18.25").
+    # Every trace anchors on the slot start; the date itself is never shown.
+    base = datetime(2024, 1, 1)
+    slots = [base + timedelta(hours=h) for h in hours]
 
     with_prices = price_values is not None
     # Both panels live on ONE x-axis as stacked y-domains (rather than
@@ -68,31 +72,35 @@ def build_population_chart(
     # unified hover across the SoC panel and the price panel together.
     fig = Figure()
 
-    _add_plugged_in_bars(fig, centers, profile, step)
-    _add_soc_layers(fig, centers, profile)
+    _add_plugged_in_bars(fig, slots, profile, step)
+    _add_soc_layers(fig, slots, profile)
     if with_prices:
-        _add_price_panel(fig, hours, price_values, price_source, price_band)
-    _style(fig, with_prices)
+        _add_price_panel(fig, slots, price_values, price_source, price_band)
+    _style(fig, base, with_prices)
     return fig
 
 
 def _add_plugged_in_bars(
-    fig: Figure, centers: list[float], profile: pl.DataFrame, step: float
+    fig: Figure, slots: list[datetime], profile: pl.DataFrame, step: float
 ) -> None:
+    # Date axes size bars in milliseconds; the offset re-centres each bar
+    # within its slot while its anchor stays on the slot start for hovering.
+    step_ms = step * 3_600_000
     fig.add_trace(
         Bar(
-            x=centers,
+            x=slots,
             y=profile["pct_plugged_in"],
             name="Plugged in",
             legendrank=1,
             marker_color=PLUGGED_IN_COLOR,
-            width=step * 0.66,
+            width=step_ms * 0.66,
+            offset=step_ms * 0.17,
             hovertemplate="%{y:.1f}% of fleet<extra>Plugged in</extra>",
         )
     )
 
 
-def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) -> None:
+def _add_soc_layers(fig: Figure, slots: list[datetime], profile: pl.DataFrame) -> None:
     """Two nested percentile washes and the mean line on top."""
     bands = [
         ("soc_p95", "soc_p05", SOC_BAND_OUTER, "SoC 5–95th pct", 4),
@@ -101,7 +109,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
     for upper, lower, fill, name, rank in bands:
         fig.add_trace(
             Scatter(
-                x=centers,
+                x=slots,
                 y=profile[upper],
                 mode="lines",
                 line={"width": 0},
@@ -111,7 +119,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
         )
         fig.add_trace(
             Scatter(
-                x=centers,
+                x=slots,
                 y=profile[lower],
                 mode="lines",
                 line={"width": 0},
@@ -125,7 +133,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
 
     fig.add_trace(
         Scatter(
-            x=centers,
+            x=slots,
             y=profile["soc_mean"],
             mode="lines",
             line={"width": 2.5, "color": SOC_COLOR, "shape": "spline"},
@@ -151,13 +159,15 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
 
 def _add_price_panel(
     fig: Figure,
-    hours: list[float],
+    slots: list[datetime],
     price_values: list[float],
     price_source: str | None,
     price_band: tuple[list[float], list[float]] | None = None,
 ) -> None:
     # Repeat the last value at 24:00 so the step line spans the full day and
     # both panels share an identical x extent.
+    x = [*slots, slots[0] + timedelta(hours=24)]
+
     def closed(values: list[float]) -> list[float]:
         return [*values, values[-1]]
 
@@ -165,7 +175,7 @@ def _add_price_panel(
     if lower is not None and upper is not None:
         fig.add_trace(
             Scatter(
-                x=[*hours, 24],
+                x=x,
                 y=closed(upper),
                 yaxis="y2",
                 mode="lines",
@@ -176,7 +186,7 @@ def _add_price_panel(
         )
         fig.add_trace(
             Scatter(
-                x=[*hours, 24],
+                x=x,
                 y=closed(lower),
                 yaxis="y2",
                 mode="lines",
@@ -201,7 +211,7 @@ def _add_price_panel(
         hovertemplate = "%{y:.1f} p/kWh<extra>Price</extra>"
     fig.add_trace(
         Scatter(
-            x=[*hours, 24],
+            x=x,
             y=closed(price_values),
             yaxis="y2",
             mode="lines",
@@ -218,7 +228,7 @@ def _add_price_panel(
     )
 
 
-def _style(fig: Figure, with_prices: bool) -> None:
+def _style(fig: Figure, base: datetime, with_prices: bool) -> None:
     tick_font = {"color": INK_MUTED, "size": 12}
     fig.update_layout(
         template="none",
@@ -247,9 +257,12 @@ def _style(fig: Figure, with_prices: bool) -> None:
         bargap=0,
         barcornerradius=3,
         xaxis={
-            "range": [0, 24],
-            "tickvals": list(range(0, 25, 3)),
+            "range": [base, base + timedelta(hours=24)],
+            "tickvals": [base + timedelta(hours=h) for h in range(0, 25, 3)],
             "ticktext": [f"{h:02d}:00" for h in range(0, 25, 3)],
+            # The anchor date is arbitrary and never shown; the hover header
+            # names the half-hour slot.
+            "hoverformat": "%H:%M",
             "showgrid": False,
             "linecolor": BASELINE,
             "ticks": "outside",
