@@ -95,16 +95,17 @@ def test_smart_charging_meets_target_by_departure() -> None:
     config, result = single_archetype_run(INTELLIGENT_OCTOPUS)
     spd = config.steps_per_day
     step_hours = 24 / spd
-    # Check SoC on the step before each agent leaves home: charging must be
-    # complete by the earlier of the ready-by time and their own departure.
+    # Check SoC at the instant each agent leaves home (recorded before any
+    # depletion): charging must be complete by the earlier of the ready-by
+    # time and their own departure.
     at_target = []
     for i, agent in enumerate(result.agents):
         for day in range(config.burn_in_days, config.n_days):
             is_weekend = day % 7 in (5, 6)
             hour = agent.weekend_plug_out_hour if is_weekend else agent.plug_out_hour
             plug_out_step = round(hour / step_hours) % spd
-            soc_before_leaving = result.soc[i, day * spd + plug_out_step - 1]
-            at_target.append(soc_before_leaving >= agent.target_soc - 0.01)
+            soc_when_leaving = result.soc[i, day * spd + plug_out_step]
+            at_target.append(soc_when_leaving >= agent.target_soc - 0.01)
     assert np.mean(at_target) > 0.95
 
 

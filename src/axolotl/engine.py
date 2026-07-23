@@ -149,6 +149,13 @@ def run_simulation(
                             state, step, steps_per_day, prices, step_hours
                         )
 
+            # Record the state at the *instant* of this step — after arrival/
+            # departure transitions, before this interval's driving/charging —
+            # so trajectories, plugged-in shading, and plug-in event markers
+            # all align on the time axis.
+            soc[i, step] = state.soc
+            plugged[i, step] = state.plugged
+
             if state.is_away:
                 state.soc = max(state.soc - state.depletion_per_step, 0.0)
             elif (
@@ -160,9 +167,6 @@ def run_simulation(
                 )
             ):
                 _charge(state, step_hours)
-
-            soc[i, step] = state.soc
-            plugged[i, step] = state.plugged
 
     return SimulationResult(
         soc=soc,

@@ -1,8 +1,14 @@
-"""The population chart: % plugged in and state of charge over a typical day.
+"""The dashboard charts.
 
-Both series are percentages, so they honestly share a single 0-100% axis —
-no dual-axis tricks. Electricity prices are a different unit (p/kWh) and get
+Population chart: % plugged in and state of charge over a typical day. Both
+series are percentages, so they honestly share a single 0-100% axis — no
+dual-axis tricks. Electricity prices are a different unit (p/kWh) and get
 their own slim panel below, aligned on the same time axis.
+
+Agent chart: one driver's actual state-of-charge trajectory over consecutive
+simulated days, with plugged-in periods shaded and each plug-in event marked
+at the SoC it happened — the individual-level output the population
+aggregates are built from.
 
 Design notes: the bars are deliberately translucent so the state-of-charge
 story reads first; the one direct label (the cheapest slot) is sparse by
@@ -11,11 +17,16 @@ shaded window spanning both panels marks the priciest contiguous hours of the
 day — the grid peak flexible charging exists to avoid.
 """
 
+from datetime import datetime, timedelta
+
 import polars as pl
 from plotly.graph_objects import Bar, Figure, Scatter
 
+from axolotl.engine import SimulationResult
+
 # Categorical palette slots (fixed assignment: the entity keeps its hue).
 PLUGGED_IN_COLOR = "rgba(42, 120, 214, 0.45)"  # blue, quiet
+PLUGGED_IN_WASH = "rgba(42, 120, 214, 0.14)"  # agent chart: plugged-in periods
 SOC_COLOR = "#eb6834"  # orange
 SOC_BAND_OUTER = "rgba(235, 104, 52, 0.10)"  # 5-95th percentile wash
 SOC_BAND_INNER = "rgba(235, 104, 52, 0.16)"  # 25-75th percentile wash
@@ -288,3 +299,172 @@ def _style(fig: Figure, with_prices: bool) -> None:
                 "anchor": "x",
             }
         )
+
+
+def build_agent_chart(
+    result: SimulationResult, agent_index: int, n_days: int | None = None
+) -> Figure:
+    """One driver's SoC trajectory and plug-in sessions over consecutive days.
+
+    Spans the whole simulation after burn-in by default (`n_days` limits it),
+    so the full behaviour — charging cadence, weekday/weekend rhythm — is
+    visible at once; zoom in for detail. Plugged-in periods are shaded in the
+    population chart's blue; each plug-in event is marked at the SoC it
+    happened, since "SoC at plug-in" is a headline output of the simulator.
+    """
+    config = result.config
+    spd = config.steps_per_day
+    step_hours = 24 / spd
+    start_day = config.burn_in_days
+    first = start_day * spd
+    last = config.n_steps if n_days is None else min((start_day + n_days) * spd, config.n_steps)
+
+    # A real time axis (anchored to an arbitrary Monday, matching the
+    # simulation's dateless week) so ticks show day names and the hover
+    # header reads "Thu 05:30". Only weekday and time are ever displayed.
+    base = datetime(2024, 1, 1) + timedelta(days=start_day)
+    times = [base + timedelta(hours=(step - first) * step_hours) for step in range(first, last)]
+    soc = result.soc[agent_index, first:last] * 100
+    plugged = result.plugged[agent_index, first:last]
+
+    fig = Figure()
+    fig.add_trace(
+        Scatter(
+            x=times,
+            y=[100.0 if p else 0.0 for p in plugged],
+            mode="lines",
+            line={"width": 0, "shape": "hv"},
+            fill="tozeroy",
+            fillcolor=PLUGGED_IN_WASH,
+            name="Plugged in",
+            legendrank=1,
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        Scatter(
+            x=times,
+            y=soc,
+            mode="lines",
+            line={"width": 2.5, "color": SOC_COLOR},
+            name="State of charge",
+            legendrank=2,
+            hovertemplate="%{y:.1f}%<extra>State of charge</extra>",
+        )
+    )
+
+    in_window = (
+        (result.plug_event_agent == agent_index)
+        & (result.plug_event_step >= first)
+        & (result.plug_event_step < last)
+    )
+    fig.add_trace(
+        Scatter(
+            x=[
+                base + timedelta(hours=(int(step) - first) * step_hours)
+                for step in result.plug_event_step[in_window]
+            ],
+            y=result.plug_event_soc[in_window] * 100,
+            mode="markers",
+            marker={"size": 9, "color": SOC_COLOR, "line": {"width": 2, "color": SURFACE}},
+            name="Plug-in event",
+            legendrank=3,
+            hovertemplate="plugged in at %{y:.1f}%<extra>Plug-in event</extra>",
+        )
+    )
+
+    # Dotted reference at this driver's charging target: not data, not grid.
+    target = result.agents[agent_index].target_soc * 100
+    window_end = base + timedelta(hours=(last - first) * step_hours)
+    fig.add_shape(
+        type="line",
+        x0=base,
+        x1=window_end,
+        y0=target,
+        y1=target,
+        line={"width": 1, "color": BASELINE, "dash": "dot"},
+    )
+    fig.add_annotation(
+        x=window_end,
+        y=target,
+        text=f"target {target:.0f}%",
+        showarrow=False,
+        font={**ANNOTATION_FONT, "size": 11, "color": INK_MUTED},
+        xanchor="right",
+        yanchor="bottom",
+        yshift=2,
+    )
+
+    fig.update_layout(
+        template="none",
+        height=420,
+        paper_bgcolor=SURFACE,
+        plot_bgcolor=SURFACE,
+        font={"family": FONT_FAMILY, "color": INK_PRIMARY, "size": 13},
+        hovermode="x unified",
+        hoverlabel={
+            "bgcolor": SURFACE,
+            "bordercolor": GRIDLINE,
+            "font": {"family": FONT_FAMILY, "size": 12},
+        },
+        legend={
+            "orientation": "h",
+            "traceorder": "normal",
+            "yanchor": "bottom",
+            "y": 1.06,
+            "xanchor": "right",
+            "x": 1,
+            "font": {"size": 12, "color": INK_SECONDARY},
+        },
+        margin={"l": 56, "r": 36, "t": 56, "b": 24},
+        xaxis={
+            # Open on a single day; the range picker and slider reach the rest.
+            "range": [base, base + timedelta(days=1)],
+            "rangeselector": {
+                "buttons": [
+                    {"count": 1, "step": "day", "label": "1d"},
+                    {"count": 3, "step": "day", "label": "3d"},
+                    {"count": 7, "step": "day", "label": "1w"},
+                    {"count": 14, "step": "day", "label": "2w"},
+                    {"step": "all", "label": "All"},
+                ],
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.06,
+                "yanchor": "bottom",
+                "bgcolor": SURFACE,
+                "activecolor": PLUGGED_IN_WASH,
+                "bordercolor": GRIDLINE,
+                "borderwidth": 1,
+                "font": {"size": 11, "color": INK_SECONDARY},
+            },
+            "rangeslider": {
+                "visible": True,
+                "thickness": 0.09,
+                "bgcolor": SURFACE,
+                "bordercolor": GRIDLINE,
+                "borderwidth": 1,
+            },
+            # Hour labels when zoomed in, day names when zoomed out — the
+            # anchor date is arbitrary and never shown.
+            "tickformatstops": [
+                {"dtickrange": [None, 86_400_000], "value": "%H:%M"},
+                {"dtickrange": [86_400_000, None], "value": "%a"},
+            ],
+            "hoverformat": "%a %H:%M",
+            "showgrid": True,
+            "gridcolor": GRIDLINE,
+            "linecolor": BASELINE,
+            "ticks": "outside",
+            "tickcolor": BASELINE,
+            "tickfont": {"color": INK_MUTED, "size": 12},
+        },
+        yaxis={
+            "range": [0, 101],
+            "ticksuffix": "%",
+            "gridcolor": GRIDLINE,
+            "zeroline": False,
+            "tickfont": {"color": INK_MUTED, "size": 12},
+        },
+    )
+    return fig

@@ -45,11 +45,15 @@ Intelligent Octopus archetype) only in the cheapest half-hours that still reach 
 target by the ready-by deadline, priced against **live Octopus Agile data** with a
 synthetic fallback when the API is unreachable.
 
-The **dashboard** pools all agents and days into a typical-day view (the first
-two simulated days are discarded as burn-in, while agents settle from their
-arbitrary initial state): bars for the share of the fleet plugged in, a line and percentile bands for
-the state-of-charge distribution, and an aligned electricity-price panel with the
-priciest hours of the day shaded.
+The **dashboard** has two views. The population chart pools all agents and days
+into a typical day (the first two simulated days are discarded as burn-in, while
+agents settle from their arbitrary initial state): bars for the share of the
+fleet plugged in, a line and percentile bands for the state-of-charge
+distribution, and an aligned electricity-price panel with the priciest hours of
+the day shaded. The individual-driver chart shows any single agent's SoC
+trajectory and plug-in sessions across consecutive days — the agent-level
+output the population aggregates are built from, and a direct way to
+sanity-check behaviour one driver at a time.
 
 ## Design decisions
 
