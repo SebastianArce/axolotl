@@ -201,10 +201,16 @@ with st.expander("How the simulation works"):
         observed in the study. While plugged in, most archetypes charge
         immediately at full power until their target state of charge; the
         *Intelligent Octopus* archetype instead schedules charging into the
-        cheapest half-hours that still reach the target by its ready-by time.
+        cheapest half-hours of that night's actual Agile prices that still
+        reach the target by its ready-by time — so its charging windows move
+        night to night as prices do.
 
-        The chart pools all agents and days (after a burn-in period) into a
-        typical-day view: bars show the share of the fleet plugged in, the line
-        and band show the distribution of battery state of charge.
+        The **population chart** pools all agents and days (after a burn-in
+        period) into a typical-day view: bars show the share of the fleet
+        plugged in, the line and band the distribution of battery state of
+        charge, and the price panel the time-of-day mean and day-to-day spread
+        of the prices the smart chargers optimised against. The
+        **individual-driver chart** shows one agent's actual trajectory across
+        consecutive days — the raw behaviour those population views aggregate.
         """
     )
