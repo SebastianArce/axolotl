@@ -91,6 +91,41 @@ def test_smart_charging_lands_in_cheap_window() -> None:
     assert charged[:, in_cheap_window].sum() / charge_steps > 0.9
 
 
+def test_smart_charging_follows_each_days_cheap_window() -> None:
+    """With a day-by-day series, the schedule must chase each day's cheap slots."""
+    config = SimulationConfig(n_agents=50, n_days=7, spread=0.0)
+    spd = config.steps_per_day
+
+    def block_hours(day: int) -> tuple[float, float]:
+        # The cheap window alternates nightly between 01:00-04:00 and 04:00-07:00.
+        return (1.0, 4.0) if day % 2 == 0 else (4.0, 7.0)
+
+    series = []
+    for day in range(config.n_days):
+        low, high = block_hours(day)
+        series.extend(2.0 if low <= step * 24 / spd < high else 30.0 for step in range(spd))
+
+    # Lower mileage keeps the nightly top-up well inside a 3-hour block.
+    low_mileage_io = INTELLIGENT_OCTOPUS.model_copy(update={"annual_miles": 9_435})
+    result = run_simulation(config, archetypes=[low_mileage_io], price_profile=series)
+
+    charged = np.diff(result.soc, axis=1) > 1e-9  # charge during step s -> diff index s
+    steps = np.arange(config.n_steps - 1)
+    days, hours = steps // spd, (steps % spd) * 24 / spd
+    blocks = np.array([block_hours(day) for day in range(config.n_days)])
+    in_todays_block = (hours >= blocks[days][:, 0]) & (hours < blocks[days][:, 1])
+    # The final evening's session has its deadline past the simulated horizon,
+    # so it has no cheap block to reach — keep it out of the denominator.
+    reachable = (days < config.n_days - 1) | (hours < 7.0)
+    total_charged_steps = charged[:, reachable].sum()
+    assert total_charged_steps > 0
+    assert charged[:, in_todays_block].sum() / total_charged_steps > 0.9
+    # Both phases of the alternating window see real use: a schedule built from
+    # a single typical day could not do this.
+    assert charged[:, in_todays_block & (hours < 4.0)].sum() > 0
+    assert charged[:, in_todays_block & (hours >= 4.0)].sum() > 0
+
+
 def test_smart_charging_meets_target_by_departure() -> None:
     config, result = single_archetype_run(INTELLIGENT_OCTOPUS)
     spd = config.steps_per_day

@@ -42,20 +42,22 @@ long trips, never negative — across the away window, return and plug in on the
 charging cycle,
 then charge — immediately at full power for most archetypes, or (for the
 Intelligent Octopus archetype) only in the cheapest half-hours that still reach the
-target by the ready-by deadline, priced against **live Octopus Agile data** with a
-synthetic fallback when the API is unreachable.
+target by the ready-by deadline, priced against **live Octopus Agile data, day by
+day**: real half-hourly rates over a recent Monday-aligned window, so the
+schedule chases each night's actual cheap slots rather than an average shape. A
+synthetic profile stands in when the API is unreachable.
 
 The **dashboard** has two views. The population chart pools all agents and days
 into a typical day (the first two simulated days are discarded as burn-in, while
 agents settle from their arbitrary initial state): bars for the share of the
 fleet plugged in, a line and percentile bands for the state-of-charge
-distribution, and an aligned electricity-price panel with the priciest hours of
-the day shaded. The individual-driver chart shows any single agent's SoC
-trajectory and plug-in sessions across consecutive days — the agent-level
-output the population aggregates are built from, and a direct way to
-sanity-check behaviour one driver at a time. Both views share the same
-aligned price panel, so smart charging can be read against price at either
-level.
+distribution, and an aligned electricity-price panel showing the time-of-day
+mean with a 5–95th percentile day-to-day spread. The
+individual-driver chart shows any single agent's SoC trajectory and plug-in
+sessions across consecutive days — the agent-level output the population
+aggregates are built from, and a direct way to sanity-check behaviour one
+driver at a time. Its price panel shows each day's actual prices, so smart
+charging can be watched following the cheap slots as they move night to night.
 
 ## Design decisions
 
@@ -106,9 +108,12 @@ level.
   that weekend charge demand is similar to weekdays. A `weekend_miles_multiplier`
   exists for exploring mileage-shifted patterns (see the illustrative "Weekend
   tripper" preset).
-- Agile prices are averaged over the last 28 days into a typical
-  time-of-day profile (region C/London; regional differences shift the level,
-  not the shape that scheduling cares about).
+- Agile prices are real half-hourly rates taken day by day over the most
+  recent Monday-aligned window matching the simulated weeks, so simulated
+  weekends see real weekend prices (region C/London; regional differences
+  shift the level, not the shape that scheduling cares about). Live-price runs
+  therefore depend on when they are fetched; runs on the synthetic fallback
+  (identical every day) are fully deterministic given the seed.
 
 ## Where the time went
 
@@ -129,7 +134,7 @@ charge taper near full; seasonal efficiency; an HTTP API over the core package.
 
 ```sh
 uv sync                  # install (Python 3.13+)
-uv run pytest            # 59 tests
+uv run pytest            # 67 tests
 uv run ruff check .      # lint
 uv run ruff format .     # format
 uv run ty check          # type check

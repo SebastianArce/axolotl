@@ -8,14 +8,12 @@ their own slim panel below, aligned on the same time axis.
 Agent chart: one driver's actual state-of-charge trajectory over consecutive
 simulated days, with plugged-in periods shaded and each plug-in event marked
 at the SoC it happened — the individual-level output the population
-aggregates are built from. The same price panel sits below, tiled across the
-displayed days, so both views read the same way.
+aggregates are built from. The same price panel sits below with each
+displayed day's actual prices, so both views read the same way.
 
 Design notes: the bars are deliberately translucent so the state-of-charge
-story reads first; the one direct label (the cheapest slot) is sparse by
-intent and everything else lives in the unified hover and the legend. The
-shaded window spanning both panels marks the priciest contiguous hours of the
-day — the grid peak flexible charging exists to avoid.
+story reads first; direct labels are sparse by intent and everything else
+lives in the unified hover and the legend.
 """
 
 from datetime import datetime, timedelta
@@ -33,6 +31,7 @@ SOC_BAND_OUTER = "rgba(235, 104, 52, 0.10)"  # 5-95th percentile wash
 SOC_BAND_INNER = "rgba(235, 104, 52, 0.16)"  # 25-75th percentile wash
 PRICE_COLOR = "#1baf7a"  # aqua
 PRICE_FILL = "rgba(27, 175, 122, 0.08)"
+PRICE_BAND = "rgba(27, 175, 122, 0.14)"  # day-to-day 5-95th percentile wash
 
 SURFACE = "#fcfcfb"
 INK_PRIMARY = "#0b0b0b"
@@ -40,13 +39,6 @@ INK_SECONDARY = "#52514e"
 INK_MUTED = "#898781"
 GRIDLINE = "#e1e0d9"
 BASELINE = "#c3c2b7"
-PEAK_WASH = "rgba(11, 11, 11, 0.06)"
-
-# Width of the highlighted peak window; its position is derived from the
-# price profile. The 17:00-20:00 fallback is GB's documented evening grid peak,
-# used when the chart is built without prices.
-PEAK_WINDOW_HOURS = 3
-DEFAULT_GRID_PEAK = (17.0, 20.0)
 
 FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 ANNOTATION_FONT = {"family": FONT_FAMILY, "size": 12, "color": INK_SECONDARY}
@@ -56,15 +48,23 @@ def build_population_chart(
     profile: pl.DataFrame,
     price_values: list[float] | None = None,
     price_source: str | None = None,
+    price_band: tuple[list[float], list[float]] | None = None,
 ) -> Figure:
     """Build the dashboard figure from a time-of-day profile.
 
     `profile` is the output of `aggregate.time_of_day_profile`. When
-    `price_values` is given (one per timestep), a price panel is added below.
+    `price_values` is given (one per timestep of the day — the slot-wise mean
+    of the day-by-day series), a price panel is added below; `price_band`
+    (lower, upper per slot) adds a day-to-day spread wash around it, the price
+    panel's counterpart to the SoC percentile bands.
     """
     hours = profile["hour"].to_list()
     step = hours[1] - hours[0] if len(hours) > 1 else 0.5
-    centers = [h + step / 2 for h in hours]
+    # A dateless datetime axis (like the agent chart's) so the unified hover
+    # header names the slot ("18:00") instead of a raw fraction ("18.25").
+    # Every trace anchors on the slot start; the date itself is never shown.
+    base = datetime(2024, 1, 1)
+    slots = [base + timedelta(hours=h) for h in hours]
 
     with_prices = price_values is not None
     # Both panels live on ONE x-axis as stacked y-domains (rather than
@@ -72,78 +72,35 @@ def build_population_chart(
     # unified hover across the SoC panel and the price panel together.
     fig = Figure()
 
-    _add_peak_window(fig, price_values, with_prices)
-    _add_plugged_in_bars(fig, centers, profile, step)
-    _add_soc_layers(fig, centers, profile)
+    _add_plugged_in_bars(fig, slots, profile, step)
+    _add_soc_layers(fig, slots, profile)
     if with_prices:
-        _add_price_panel(fig, hours, price_values, price_source)
-        _annotate_cheapest_slot(fig, centers, price_values)
-    _style(fig, with_prices)
+        _add_price_panel(fig, slots, price_values, price_source, price_band)
+    _style(fig, base, with_prices)
     return fig
 
 
-def _priciest_window(price_values: list[float]) -> tuple[float, float]:
-    """Start/end hours of the most expensive contiguous PEAK_WINDOW_HOURS."""
-    step_hours = 24 / len(price_values)
-    window = round(PEAK_WINDOW_HOURS / step_hours)
-    start = max(
-        range(len(price_values) - window + 1),
-        key=lambda i: sum(price_values[i : i + window]),
-    )
-    return start * step_hours, (start + window) * step_hours
-
-
-def _add_peak_window(fig: Figure, price_values: list[float] | None, with_prices: bool) -> None:
-    """Shade the priciest hours of the day across every panel."""
-    if price_values is not None:
-        peak_start, peak_end = _priciest_window(price_values)
-        label = f"priciest {PEAK_WINDOW_HOURS} hours"
-    else:
-        peak_start, peak_end = DEFAULT_GRID_PEAK
-        label = "evening grid peak"
-
-    # add_shape rather than add_vrect: the latter drops the shape silently
-    # under plotly 6.9. `yref="y domain"` spans a panel's full height.
-    for yref in ("y domain", "y2 domain") if with_prices else ("y domain",):
-        fig.add_shape(
-            type="rect",
-            x0=peak_start,
-            x1=peak_end,
-            y0=0,
-            y1=1,
-            xref="x",
-            yref=yref,
-            fillcolor=PEAK_WASH,
-            line_width=0,
-            layer="below",
-        )
-    fig.add_annotation(
-        x=(peak_start + peak_end) / 2,
-        y=99,
-        text=label,
-        showarrow=False,
-        font={**ANNOTATION_FONT, "size": 11, "color": INK_MUTED},
-        yanchor="top",
-    )
-
-
 def _add_plugged_in_bars(
-    fig: Figure, centers: list[float], profile: pl.DataFrame, step: float
+    fig: Figure, slots: list[datetime], profile: pl.DataFrame, step: float
 ) -> None:
+    # Date axes size bars in milliseconds; the offset re-centres each bar
+    # within its slot while its anchor stays on the slot start for hovering.
+    step_ms = step * 3_600_000
     fig.add_trace(
         Bar(
-            x=centers,
+            x=slots,
             y=profile["pct_plugged_in"],
             name="Plugged in",
             legendrank=1,
             marker_color=PLUGGED_IN_COLOR,
-            width=step * 0.66,
-            hovertemplate="%{y:.1f}% of fleet<extra>Plugged in</extra>",
+            width=step_ms * 0.66,
+            offset=step_ms * 0.17,
+            hovertemplate="%{y:.1f}% of fleet<extra><b>Plugged in</b></extra>",
         )
     )
 
 
-def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) -> None:
+def _add_soc_layers(fig: Figure, slots: list[datetime], profile: pl.DataFrame) -> None:
     """Two nested percentile washes and the mean line on top."""
     bands = [
         ("soc_p95", "soc_p05", SOC_BAND_OUTER, "SoC 5–95th pct", 4),
@@ -152,7 +109,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
     for upper, lower, fill, name, rank in bands:
         fig.add_trace(
             Scatter(
-                x=centers,
+                x=slots,
                 y=profile[upper],
                 mode="lines",
                 line={"width": 0},
@@ -162,7 +119,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
         )
         fig.add_trace(
             Scatter(
-                x=centers,
+                x=slots,
                 y=profile[lower],
                 mode="lines",
                 line={"width": 0},
@@ -176,7 +133,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
 
     fig.add_trace(
         Scatter(
-            x=centers,
+            x=slots,
             y=profile["soc_mean"],
             mode="lines",
             line={"width": 2.5, "color": SOC_COLOR, "shape": "spline"},
@@ -194,7 +151,7 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
             hovertemplate=(
                 "%{y:.1f}% mean · 25–75th: %{customdata[1]:.0f}–%{customdata[2]:.0f}% · "
                 "5–95th: %{customdata[0]:.0f}–%{customdata[3]:.0f}%"
-                "<extra>State of charge</extra>"
+                "<extra><b>State of charge</b></extra>"
             ),
         )
     )
@@ -202,45 +159,76 @@ def _add_soc_layers(fig: Figure, centers: list[float], profile: pl.DataFrame) ->
 
 def _add_price_panel(
     fig: Figure,
-    hours: list[float],
+    slots: list[datetime],
     price_values: list[float],
     price_source: str | None,
+    price_band: tuple[list[float], list[float]] | None = None,
 ) -> None:
     # Repeat the last value at 24:00 so the step line spans the full day and
     # both panels share an identical x extent.
+    x = [*slots, slots[0] + timedelta(hours=24)]
+
+    def closed(values: list[float]) -> list[float]:
+        return [*values, values[-1]]
+
+    lower, upper = price_band if price_band is not None else (None, None)
+    if lower is not None and upper is not None:
+        fig.add_trace(
+            Scatter(
+                x=x,
+                y=closed(upper),
+                yaxis="y2",
+                mode="lines",
+                line={"width": 0, "shape": "hv"},
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        fig.add_trace(
+            Scatter(
+                x=x,
+                y=closed(lower),
+                yaxis="y2",
+                mode="lines",
+                line={"width": 0, "shape": "hv"},
+                fill="tonexty",
+                fillcolor=PRICE_BAND,
+                name="Price 5–95th pct",
+                legendrank=6,
+                hoverinfo="skip",
+            )
+        )
+    # Like the SoC mean line, the price line carries its band's values in the
+    # unified hover (the band traces themselves stay hover-silent).
+    if lower is not None and upper is not None:
+        customdata = list(zip(closed(lower), closed(upper), strict=True))
+        hovertemplate = (
+            "%{y:.1f} p/kWh mean · 5–95th: %{customdata[0]:.1f}–%{customdata[1]:.1f} p/kWh"
+            "<extra><b>Price</b></extra>"
+        )
+    else:
+        customdata = None
+        hovertemplate = "%{y:.1f} p/kWh<extra><b>Price</b></extra>"
     fig.add_trace(
         Scatter(
-            x=[*hours, 24],
-            y=[*price_values, price_values[-1]],
+            x=x,
+            y=closed(price_values),
             yaxis="y2",
             mode="lines",
             line={"width": 2, "color": PRICE_COLOR, "shape": "hv"},
-            fill="tozeroy",
-            fillcolor=PRICE_FILL,
+            # With a spread band the wash carries the story; without one the
+            # fill-to-zero keeps the panel's original look.
+            fill=None if price_band is not None else "tozeroy",
+            fillcolor=None if price_band is not None else PRICE_FILL,
             name=f"Electricity price ({price_source or 'profile'})",
             legendrank=5,
-            hovertemplate="%{y:.1f} p/kWh<extra>Price</extra>",
+            customdata=customdata,
+            hovertemplate=hovertemplate,
         )
     )
 
 
-def _annotate_cheapest_slot(fig: Figure, centers: list[float], price_values: list[float]) -> None:
-    """The one direct label: where charging is cheapest."""
-    cheapest_idx = min(range(len(price_values)), key=price_values.__getitem__)
-    fig.add_annotation(
-        x=centers[cheapest_idx],
-        y=price_values[cheapest_idx],
-        xref="x",
-        yref="y2",
-        text=f"cheapest: {price_values[cheapest_idx]:.1f}p",
-        showarrow=False,
-        font={**ANNOTATION_FONT, "size": 11},
-        yanchor="bottom",
-        yshift=6,
-    )
-
-
-def _style(fig: Figure, with_prices: bool) -> None:
+def _style(fig: Figure, base: datetime, with_prices: bool) -> None:
     tick_font = {"color": INK_MUTED, "size": 12}
     fig.update_layout(
         template="none",
@@ -269,9 +257,12 @@ def _style(fig: Figure, with_prices: bool) -> None:
         bargap=0,
         barcornerradius=3,
         xaxis={
-            "range": [0, 24],
-            "tickvals": list(range(0, 25, 3)),
+            "range": [base, base + timedelta(hours=24)],
+            "tickvals": [base + timedelta(hours=h) for h in range(0, 25, 3)],
             "ticktext": [f"{h:02d}:00" for h in range(0, 25, 3)],
+            # The anchor date is arbitrary and never shown; the hover header
+            # names the half-hour slot, labelled like the rows beneath it.
+            "hoverformat": "<b>Time</b> %H:%M",
             "showgrid": False,
             "linecolor": BASELINE,
             "ticks": "outside",
@@ -308,16 +299,22 @@ def build_agent_chart(
     n_days: int | None = None,
     price_values: list[float] | None = None,
     price_source: str | None = None,
+    view_days: int | None = 1,
 ) -> Figure:
     """One driver's SoC trajectory and plug-in sessions over consecutive days.
 
     Spans the whole simulation after burn-in by default (`n_days` limits it),
     so the full behaviour — charging cadence, weekday/weekend rhythm — is
-    visible at once; zoom in for detail. Plugged-in periods are shaded in the
-    population chart's blue; each plug-in event is marked at the SoC it
-    happened, since "SoC at plug-in" is a headline output of the simulator.
-    When `price_values` is given (one per timestep of the day), the population
-    chart's price panel is added below, tiled across the displayed days.
+    visible at once. `view_days` sets the visible window from the data start
+    (None shows everything); the range slider reaches the rest. The window
+    choice is a parameter rather than in-chart buttons so the caller can keep
+    it stable across rebuilds — a rebuilt figure resets in-chart UI state.
+    Plugged-in periods are shaded in the population chart's blue; each plug-in
+    event is marked at the SoC it happened, since "SoC at plug-in" is a
+    headline output of the simulator. When `price_values` is given — a full
+    day-by-day series (one per simulated timestep) or a single-day profile
+    (tiled) — the population chart's price panel is added below, showing each
+    displayed day's prices.
     """
     config = result.config
     spd = config.steps_per_day
@@ -356,7 +353,7 @@ def build_agent_chart(
             line={"width": 2.5, "color": SOC_COLOR},
             name="State of charge",
             legendrank=2,
-            hovertemplate="%{y:.1f}%<extra>State of charge</extra>",
+            hovertemplate="%{y:.1f}%<extra><b>State of charge</b></extra>",
         )
     )
 
@@ -376,7 +373,7 @@ def build_agent_chart(
             marker={"size": 9, "color": SOC_COLOR, "line": {"width": 2, "color": SURFACE}},
             name="Plug-in event",
             legendrank=3,
-            hovertemplate="plugged in at %{y:.1f}%<extra>Plug-in event</extra>",
+            hovertemplate="plugged in at %{y:.1f}%<extra><b>Plug-in event</b></extra>",
         )
     )
 
@@ -404,26 +401,11 @@ def build_agent_chart(
 
     with_prices = price_values is not None
     if with_prices:
-        _add_agent_peak_windows(fig, base, (last - first) // spd, price_values)
-        _add_agent_price_panel(fig, times, step_hours, price_values, price_source)
+        window = _window_prices(price_values, first, last, spd)
+        _add_agent_price_panel(fig, times, step_hours, window, price_source)
 
-    # Range buttons jump to spans anchored at the start of the data. Plotly's
-    # built-in rangeselector steps backward from the current view's end, so on
-    # the first day "1w" would reach six days before the data and show an
-    # almost-empty chart. Spans that wouldn't differ from "All" are dropped.
     total_days = (last - first) // spd
-    range_buttons = [
-        {
-            "label": label,
-            "method": "relayout",
-            "args": [{"xaxis.range": [base, base + timedelta(days=days)]}],
-        }
-        for days, label in ((1, "1d"), (3, "3d"), (7, "1w"), (14, "2w"))
-        if days < total_days
-    ]
-    range_buttons.append(
-        {"label": "All", "method": "relayout", "args": [{"xaxis.range": [base, window_end]}]}
-    )
+    visible_days = total_days if view_days is None else min(view_days, total_days)
 
     fig.update_layout(
         template="none",
@@ -449,25 +431,9 @@ def build_agent_chart(
             "font": {"size": 12, "color": INK_SECONDARY},
         },
         margin={"l": 56, "r": 36, "t": 56, "b": 24},
-        updatemenus=[
-            {
-                "type": "buttons",
-                "direction": "right",
-                "buttons": range_buttons,
-                "x": 0,
-                "xanchor": "left",
-                "y": 1.06,
-                "yanchor": "bottom",
-                "showactive": True,
-                "bgcolor": SURFACE,
-                "bordercolor": GRIDLINE,
-                "borderwidth": 1,
-                "font": {"size": 11, "color": INK_SECONDARY},
-            }
-        ],
         xaxis={
-            # Open on a single day; the range buttons and slider reach the rest.
-            "range": [base, base + timedelta(days=1)],
+            # Open on the caller's view window; the slider reaches the rest.
+            "range": [base, base + timedelta(days=visible_days)],
             "rangeslider": {
                 "visible": True,
                 "thickness": 0.09,
@@ -475,13 +441,13 @@ def build_agent_chart(
                 "bordercolor": GRIDLINE,
                 "borderwidth": 1,
             },
-            # Hour labels when zoomed in, day names when zoomed out — the
-            # anchor date is arbitrary and never shown.
+            # Two-line hour + day-name labels when zoomed in, day names alone
+            # when zoomed out — the anchor date is arbitrary and never shown.
             "tickformatstops": [
-                {"dtickrange": [None, 86_400_000], "value": "%H:%M"},
+                {"dtickrange": [None, 86_400_000], "value": "%H:%M<br>%a"},
                 {"dtickrange": [86_400_000, None], "value": "%a"},
             ],
-            "hoverformat": "%a %H:%M",
+            "hoverformat": "<b>Time</b> %a %H:%M",
             "showgrid": True,
             "gridcolor": GRIDLINE,
             "linecolor": BASELINE,
@@ -514,52 +480,30 @@ def build_agent_chart(
     return fig
 
 
-def _add_agent_peak_windows(
-    fig: Figure, base: datetime, n_days: int, price_values: list[float]
-) -> None:
-    """Shade the priciest hours of each displayed day across both panels."""
-    peak_start, peak_end = _priciest_window(price_values)
-    for day in range(n_days):
-        for yref in ("y domain", "y2 domain"):
-            fig.add_shape(
-                type="rect",
-                x0=base + timedelta(days=day, hours=peak_start),
-                x1=base + timedelta(days=day, hours=peak_end),
-                y0=0,
-                y1=1,
-                xref="x",
-                yref=yref,
-                fillcolor=PEAK_WASH,
-                line_width=0,
-                layer="below",
-            )
-    # One sparse label on the opening day; the shading repeats daily.
-    fig.add_annotation(
-        x=base + timedelta(hours=(peak_start + peak_end) / 2),
-        y=99,
-        text=f"priciest {PEAK_WINDOW_HOURS} hours",
-        showarrow=False,
-        font={**ANNOTATION_FONT, "size": 11, "color": INK_MUTED},
-        yanchor="top",
-    )
+def _window_prices(
+    price_values: list[float], first: int, last: int, steps_per_day: int
+) -> list[float]:
+    """The price at each displayed step: slice a full day-by-day series, or
+    tile a single-day profile."""
+    if len(price_values) == steps_per_day:
+        return [price_values[step % steps_per_day] for step in range(first, last)]
+    return list(price_values[first:last])
 
 
 def _add_agent_price_panel(
     fig: Figure,
     times: list[datetime],
     step_hours: float,
-    price_values: list[float],
+    window_prices: list[float],
     price_source: str | None,
 ) -> None:
-    """The population chart's price panel, tiled across the displayed days."""
-    spd = len(price_values)
-    tiled = [price_values[i % spd] for i in range(len(times))]
+    """The population chart's price panel, showing each displayed day's prices."""
     # Repeat the last value one step past the window so the step line spans
     # the same x extent as the SoC panel.
     fig.add_trace(
         Scatter(
             x=[*times, times[-1] + timedelta(hours=step_hours)],
-            y=[*tiled, tiled[-1]],
+            y=[*window_prices, window_prices[-1]],
             yaxis="y2",
             mode="lines",
             line={"width": 2, "color": PRICE_COLOR, "shape": "hv"},
@@ -567,6 +511,6 @@ def _add_agent_price_panel(
             fillcolor=PRICE_FILL,
             name=f"Electricity price ({price_source or 'profile'})",
             legendrank=4,
-            hovertemplate="%{y:.1f} p/kWh<extra>Price</extra>",
+            hovertemplate="%{y:.1f} p/kWh<extra><b>Price</b></extra>",
         )
     )

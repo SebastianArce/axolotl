@@ -7,7 +7,7 @@ from axolotl.archetypes import ARCHETYPES, WEEKEND_TRIPPER, Archetype
 from axolotl.chart import build_agent_chart, build_population_chart
 from axolotl.config import SimulationConfig
 from axolotl.engine import SimulationResult, run_simulation
-from axolotl.prices import get_price_profile
+from axolotl.prices import get_price_series, price_time_of_day_stats
 
 ALL_ARCHETYPES: dict[str, Archetype] = {a.name: a for a in (*ARCHETYPES, WEEKEND_TRIPPER)}
 DAY_FILTERS: dict[str, DayFilter] = {
@@ -15,6 +15,7 @@ DAY_FILTERS: dict[str, DayFilter] = {
     "Weekdays": "weekday",
     "Weekends": "weekend",
 }
+VIEW_WINDOWS: dict[str, int | None] = {"1d": 1, "3d": 3, "1w": 7, "2w": 14, "All": None}
 
 
 def fmt_hour(hour: float) -> str:
@@ -23,9 +24,12 @@ def fmt_hour(hour: float) -> str:
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def cached_prices(steps_per_day: int, use_live: bool) -> tuple[list[float], str]:
-    profile = get_price_profile(steps_per_day, use_live=use_live)
-    return profile.values_p_per_kwh, profile.source
+def cached_price_series(
+    steps_per_day: int, n_days: int, use_live: bool
+) -> tuple[list[float], str, str | None]:
+    series = get_price_series(steps_per_day, n_days, use_live=use_live)
+    start = series.start_date.isoformat() if series.start_date else None
+    return series.values_p_per_kwh, series.source, start
 
 
 # The full result (not just aggregates) is cached so the individual-driver
@@ -76,8 +80,9 @@ with st.sidebar:
     use_live_prices = st.toggle(
         "Live Octopus Agile prices",
         value=True,
-        help="28-day average by time of day, used by smart charging. Falls back "
-        "to a synthetic profile when the API is unreachable.",
+        help="Real half-hourly rates, day by day over a recent Monday-aligned "
+        "window matching the simulated weeks, used by smart charging. Falls "
+        "back to a synthetic profile when the API is unreachable.",
     )
 
 st.title("EV driver behaviour")
@@ -91,7 +96,9 @@ if not selected_names:
     st.stop()
 
 steps_per_day = SimulationConfig().steps_per_day
-price_values, price_source = cached_prices(steps_per_day, use_live_prices)
+price_values, price_source, price_start = cached_price_series(
+    steps_per_day, weeks * 7, use_live_prices
+)
 price_label = {"agile": "Octopus Agile", "synthetic": "synthetic"}[price_source]
 result = cached_simulation(
     tuple(selected_names), n_agents, weeks * 7, seed, spread, tuple(price_values)
@@ -107,20 +114,23 @@ with st.container(border=True):
         show_prices = st.toggle("Show price panel", value=True)
 
     profile = time_of_day_profile(result, DAY_FILTERS[day_filter_label])
+    price_mean, price_p05, price_p95 = price_time_of_day_stats(price_values, steps_per_day)
     st.plotly_chart(
         build_population_chart(
             profile,
-            price_values=price_values if show_prices else None,
+            price_values=price_mean if show_prices else None,
             price_source=price_label,
+            price_band=(price_p05, price_p95) if show_prices else None,
         ),
         width="stretch",
     )
 
-    price_note = (
-        "Octopus Agile, 28-day average by time of day"
-        if price_source == "agile"
-        else "synthetic profile (Agile API unreachable)"
-    )
+    if price_source == "agile":
+        price_note = f"Octopus Agile half-hourly rates, day by day from Monday {price_start}"
+    elif use_live_prices:
+        price_note = "synthetic profile (Agile API unreachable)"
+    else:
+        price_note = "synthetic profile"
     st.caption(
         f"{n_agents:,} agents · {weeks} weeks at 30-minute resolution · "
         f"prices: {price_note} · smart chargers schedule into the cheapest slots."
@@ -142,6 +152,11 @@ with st.container(border=True):
         driver_number = int(
             st.number_input("Driver", min_value=1, max_value=len(driver_indices), value=1)
         )
+        # Widget state survives reruns, so the chosen window sticks when
+        # switching driver (a rebuilt figure would reset in-chart buttons).
+        view_label = (
+            st.segmented_control("View", list(VIEW_WINDOWS), default="1d", key="agent_view") or "1d"
+        )
         show_agent_prices = st.toggle("Show price panel", value=True, key="agent_prices")
 
     agent_index = driver_indices[driver_number - 1]
@@ -152,8 +167,10 @@ with st.container(border=True):
             agent_index,
             price_values=price_values if show_agent_prices else None,
             price_source=price_label,
+            view_days=VIEW_WINDOWS[view_label],
         ),
         width="stretch",
+        key="agent_chart",
     )
 
     cadence = max(1, round(1 / agent.archetype.plug_in_frequency_per_day))
